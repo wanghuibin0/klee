@@ -12,6 +12,7 @@
 
 namespace klee {
   class Executor;
+  class FuncExecutor;
   class Searcher;
 
   // XXX gross, should be on demand?
@@ -20,6 +21,7 @@ namespace klee {
   void initializeSearchOptions();
 
   Searcher *constructUserSearcher(Executor &executor);
+  Searcher *constructUserSearcher(FuncExecutor &executor);
 }
 
 #endif

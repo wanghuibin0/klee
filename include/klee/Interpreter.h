@@ -91,6 +91,7 @@ protected:
     : interpreterOpts(_interpreterOpts)
   {}
 
+
 public:
   virtual ~Interpreter() {}
 

@@ -29,6 +29,7 @@
 #include <string>
 #include <map>
 #include <set>
+#include <memory>
 
 struct KTest;
 
@@ -72,6 +73,58 @@ namespace klee {
   class MergeHandler;
   template<class T> class ref;
 
+  bool isPure(llvm::Function *f);
+
+  enum SubpathEndReason {
+    Abort,
+    Assert,
+    BadVectorAccess,
+    Exec,
+    External,
+    Free,
+    Model,
+    Overflow,
+    Ptr,
+    ReadOnly,
+    ReportError,
+    User,
+    Unhandled,
+    SubPathEnd
+  };
+
+  struct PathSummary {
+    ref<Expr> preCond;
+    ref<Expr> postCond;
+    enum SubpathEndReason endReason;
+
+    void dump() {
+      llvm::errs() << "preCond: \n";
+      preCond->dump();
+      llvm::errs() << "postCond: \n";
+      postCond->dump();
+    }
+  };
+
+  //typedef std::vector<PathSummary*> Summary;
+  struct Summary {
+    std::vector<ref<Expr>> context;
+    std::vector<ref<Expr>> args;
+    std::vector<std::shared_ptr<PathSummary>> subpaths;
+    Summary(llvm::Function*, KModule*, std::vector<ref<Expr>>&);
+    Summary(llvm::Function*, KModule*);
+
+    void dump() {
+      unsigned n = subpaths.size();
+      for (unsigned i = 0; i < n; ++i) {
+        llvm::errs() << "path" << i << ": \n";
+        subpaths[i]->dump();
+      }
+    }
+  };
+
+  typedef std::map<llvm::Function*, std::shared_ptr<Summary>> SummaryMap;
+
+  //SummaryMap smap;
 
 
   /// \todo Add a context object to keep track of data only live
@@ -113,16 +166,18 @@ public:
     User,
     Unhandled
   };
-
+  
 private:
   static const char *TerminateReasonNames[];
 
   class TimerInfo;
 
+protected:
   KModule *kmodule;
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
 
+protected:
   ExternalDispatcher *externalDispatcher;
   TimingSolver *solver;
   MemoryManager *memory;
@@ -204,7 +259,7 @@ private:
   double coreSolverTimeout;
 
   /// Assumes ownership of the created array objects
-  ArrayCache arrayCache;
+  //ArrayCache arrayCache;
 
   /// File to print executed instructions to
   llvm::raw_ostream *debugInstFile;
@@ -218,8 +273,10 @@ private:
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
   
+protected:
   void executeInstruction(ExecutionState &state, KInstruction *ki);
 
+protected:
   void printFileLine(ExecutionState &state, KInstruction *ki,
                      llvm::raw_ostream &file);
 
@@ -295,7 +352,7 @@ private:
                    ref<Expr> address,
                    KInstruction *target = 0);
   
-  void executeCall(ExecutionState &state, 
+  virtual void executeCall(ExecutionState &state, 
                    KInstruction *ki,
                    llvm::Function *f,
                    std::vector< ref<Expr> > &arguments);
@@ -455,6 +512,7 @@ private:
 public:
   Executor(llvm::LLVMContext &ctx, const InterpreterOptions &opts,
       InterpreterHandler *ie);
+  Executor(const Executor&);
   virtual ~Executor();
 
   const InterpreterHandler& getHandler() {
@@ -525,8 +583,27 @@ public:
 
   Expr::Width getWidthForLLVMType(llvm::Type *type) const;
   size_t getAllocationAlignment(const llvm::Value *allocSite) const;
+
+  void addConstraint(ExecutionState &state, std::vector<ref<Expr>> conditions);
+  void applySummary(ExecutionState &state, 
+                    std::shared_ptr<Summary> sum, 
+                    std::vector< ref<Expr> > &arguments);
+  virtual void storeSubpathSummary(ExecutionState &state, ref<Expr> retVal);
 };
-  
+
+class FuncExecutor : public Executor {
+public:
+  //Summary *summarizing;
+  std::shared_ptr<Summary> summarizing;
+
+public:
+  FuncExecutor(const Executor &e, llvm::Function *f);
+  //virtual ~FuncExecutor();
+
+  void runFunction(llvm::Function*);
+  virtual void storeSubpathSummary(ExecutionState &state, ref<Expr> retVal);
+};
+
 } // End klee namespace
 
 #endif

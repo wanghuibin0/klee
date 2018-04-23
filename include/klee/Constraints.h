@@ -65,7 +65,7 @@ public:
     return constraints == other.constraints;
   }
   
-private:
+public:
   std::vector< ref<Expr> > constraints;
 
   // returns true iff the constraints were modified

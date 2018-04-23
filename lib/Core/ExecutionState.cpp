@@ -378,3 +378,13 @@ void ExecutionState::dumpStack(llvm::raw_ostream &out) const {
     target = sf.caller;
   }
 }
+
+ref<Expr> ExecutionState::getConstraint() const {
+  ref<Expr> constraint = ConstantExpr::alloc(1, Expr::Bool);
+  for (auto it = constraints.begin(), ie = constraints.end();
+       it != ie;
+       ++it)
+    constraint = AndExpr::create(constraint, *it);
+
+  return constraint;
+}

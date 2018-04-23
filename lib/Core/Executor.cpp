@@ -95,10 +95,6 @@
 using namespace llvm;
 using namespace klee;
 
-
-
-
-
 namespace {
   cl::opt<bool>
   DumpStatesOnHalt("dump-states-on-halt",
@@ -305,6 +301,15 @@ namespace {
 
 namespace klee {
   RNG theRNG;
+  ArrayCache arrayCache;
+  SummaryMap smap;
+
+  bool isPure(llvm::Function *f) {
+    llvm::errs() << f->getName() << "\n";
+    return f->getAttributes()
+           .hasAttribute(llvm::AttributeSet::FunctionIndex, 
+                         llvm::Attribute::ReadNone);
+  }
 }
 
 const char *Executor::TerminateReasonNames[] = {
@@ -390,6 +395,19 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
   }
 }
 
+Executor::Executor(const Executor &e) :
+  Interpreter(e.interpreterOpts),
+  kmodule(e.kmodule), interpreterHandler(e.interpreterHandler),
+  searcher(0), externalDispatcher(e.externalDispatcher),
+  solver(e.solver), memory(new MemoryManager(&arrayCache)),
+  statsTracker(0),
+  pathWriter(0), symPathWriter(0),
+  specialFunctionHandler(e.specialFunctionHandler),
+  processTree(0), replayKTest(0), replayPath(0), usingSeeds(0),
+  atMemoryLimit(false), inhibitForking(false), haltExecution(false),
+  ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout), 
+  debugInstFile(0), debugLogBuffer(debugBufferString) { }
+
 
 const Module *Executor::setModule(llvm::Module *module, 
                                   const ModuleOptions &opts) {
@@ -420,12 +438,12 @@ const Module *Executor::setModule(llvm::Module *module,
 
 Executor::~Executor() {
   delete memory;
-  delete externalDispatcher;
+  //delete externalDispatcher;
   delete processTree;
-  delete specialFunctionHandler;
+  //delete specialFunctionHandler;
   delete statsTracker;
-  delete solver;
-  delete kmodule;
+  //delete solver;
+  //delete kmodule;
   while(!timers.empty()) {
     delete timers.back();
     timers.pop_back();
@@ -1184,6 +1202,18 @@ void Executor::executeCall(ExecutionState &state,
                            KInstruction *ki,
                            Function *f,
                            std::vector< ref<Expr> > &arguments) {
+  if (isPure(f)) {
+    auto it = smap.find(f);
+    if (it != smap.end()) {
+      applySummary(state, it->second, arguments);
+    } else {
+      FuncExecutor fe(*this, f);
+      fe.runFunction(f);
+      smap.insert(std::make_pair(f, fe.summarizing));
+      applySummary(state, fe.summarizing, arguments);
+    }
+    return;
+  }
   Instruction *i = ki->inst;
   if (f && f->isDeclaration()) {
     switch(f->getIntrinsicID()) {
@@ -1454,7 +1484,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     
     if (state.stack.size() <= 1) {
       assert(!caller && "caller set on initial stack frame");
-      terminateStateOnExit(state);
+      storeSubpathSummary(state, result);
     } else {
       state.popFrame();
 
@@ -3750,4 +3780,124 @@ void Executor::prepareForEarlyExit() {
 Interpreter *Interpreter::create(LLVMContext &ctx, const InterpreterOptions &opts,
                                  InterpreterHandler *ih) {
   return new Executor(ctx, opts, ih);
+}
+
+
+///
+FuncExecutor::FuncExecutor(const Executor &e, llvm::Function *f)
+  : Executor(e), 
+    summarizing(new Summary(f, kmodule)) { }
+
+void FuncExecutor::runFunction(Function *f) {
+  KFunction *kf = kmodule->functionMap[f];
+  ExecutionState *es = new ExecutionState(kf);
+
+  processTree = new PTree(es);
+  es->ptreeNode = processTree->root;
+  
+  unsigned numArgs = f->arg_size();
+  for (unsigned i = 0; i < numArgs; ++i) {
+    bindArgument(kf, i, *es, summarizing->args[0]);
+  }
+
+  states.insert(es);
+
+  searcher = constructUserSearcher(*this);
+  std::vector<ExecutionState *> newStates(states.begin(), states.end());
+  searcher->update(0, newStates, std::vector<ExecutionState *>());
+
+  while (!states.empty()) {
+    ExecutionState &state = searcher->selectState();
+    KInstruction *ki = state.pc;
+    stepInstruction(state);
+
+    executeInstruction(state, ki);
+    //processTimers(&state, MaxInstructionTime);
+
+    //checkMemoryUsage();
+
+    updateStates(&state);
+  }
+
+  delete searcher;
+  searcher = 0;
+  delete processTree;
+  processTree = 0;
+
+  return;
+}
+
+void Executor::addConstraint(ExecutionState &state, std::vector<ref<Expr>> conditions) {
+  unsigned N = conditions.size();
+  for (unsigned i = 0; i < N; ++i) {
+    addConstraint(state, conditions[i]);
+  }
+}
+
+void Executor::applySummary(ExecutionState &state, 
+                            std::shared_ptr<Summary> sum, 
+                            std::vector< ref<Expr> > &arguments) {
+  llvm::errs() << "in applySummary\n";
+  sum->dump();
+  unsigned numArgs = arguments.size();
+  for (unsigned i = 0; i < numArgs; ++i)
+    addConstraint(state, EqExpr::create(arguments[i], sum->args[i]));
+
+  unsigned N = sum->subpaths.size();
+  std::vector<ExecutionState*> tmp;
+  
+  tmp.push_back(&state);
+  for (unsigned i = 1; i < N; ++i) {
+    ExecutionState *es = tmp[theRNG.getInt32() % i];
+    ExecutionState *ns = es->branch();
+    tmp.push_back(ns);
+    es->ptreeNode->data = 0;
+    std::pair<PTree::Node*, PTree::Node*> res = 
+      processTree->split(es->ptreeNode, ns, es);
+    ns->ptreeNode = res.first;
+    es->ptreeNode = res.second;
+  }
+    
+  for (unsigned i = 0; i < N; ++i) {
+    auto ps = sum->subpaths[i];
+    bool result;
+    bool success = solver->mayBeTrue(*(tmp[i]), ps->preCond, result);
+    assert(success && "FIXME: Unhandled solver failure in applying summary");
+    (void) success;
+    if (!result) {
+      delete tmp[i];
+    } else {
+      addConstraint(*(tmp[i]), ps->preCond);
+      bindLocal(tmp[i]->prevPC, *(tmp[i]), ps->postCond);
+      addedStates.push_back(tmp[i]);
+    }
+  }
+}
+
+Summary::Summary(llvm::Function *f, KModule *kmodule) {
+  unsigned numArgs = f->arg_size();
+  auto ai = f->arg_begin();
+  std::string fname = f->getName();
+  for (unsigned i = 0; i < numArgs; ++i, ++ai) {
+    unsigned argSize = kmodule->targetData->getTypeStoreSize(ai->getType());
+    Expr::Width argSizeInBits = kmodule->targetData->getTypeSizeInBits(ai->getType());
+    const Array *array = arrayCache.CreateArray(fname + "_arg" + llvm::utostr(i), argSize);
+    args.push_back(Expr::createTempRead(array, argSizeInBits));
+  }
+}
+
+void Executor::storeSubpathSummary(ExecutionState &state, ref<Expr> retVal) {
+  terminateStateOnExit(state);
+  return;
+}
+
+void FuncExecutor::storeSubpathSummary(ExecutionState &state, ref<Expr> retVal) {
+   // summarize the effect of current path
+   std::shared_ptr<PathSummary> currentPs(new PathSummary());
+   currentPs->preCond = state.getConstraint();
+   currentPs->postCond = retVal;
+   currentPs->endReason = SubPathEnd;
+   summarizing->subpaths.push_back(currentPs);
+   currentPs->dump();
+   terminateState(state);
 }

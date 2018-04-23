@@ -99,7 +99,7 @@ namespace {
   
   cl::opt<bool>
   UseCallPaths("use-call-paths",
-	       cl::init(true),
+	       cl::init(false),
                cl::desc("Enable calltree tracking for instruction level statistics (default=on)"));
   
 }
@@ -426,6 +426,9 @@ double StatsTracker::elapsed() {
 }
 
 void StatsTracker::writeStatsLine() {
+  llvm::errs() << "memory: " << executor.memory << "\n";
+  llvm::errs() << "executor: " << &executor<< "\n";
+  llvm::errs() << "this: " << this << "\n";
   *statsFile << "(" << stats::instructions
              << "," << fullBranches
              << "," << partialBranches
@@ -477,7 +480,11 @@ void StatsTracker::writeIStats() {
   of << "version: 1\n";
   of << "creator: klee\n";
   of << "pid: " << getpid() << "\n";
-  of << "cmd: " << m->getModuleIdentifier() << "\n\n";
+  of << "cmd: ";
+  llvm::errs() << "kmodule: " << executor.kmodule << "\n";
+  llvm::errs() << "m: " << m << "\n";
+  llvm::errs() << "id: " << m->getModuleIdentifier() << "\n";
+  of << m->getModuleIdentifier() << "\n\n";
   of << "\n";
   
   StatisticManager &sm = *theStatisticManager;

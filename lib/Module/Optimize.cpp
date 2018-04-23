@@ -92,6 +92,10 @@ static void AddStandardCompilePasses(klee::LegacyLLVMPassManagerTy &PM) {
 
   if (DisableOptimizations) return;
 
+  addPass(PM, createNoAAPass());
+  addPass(PM, createTypeBasedAliasAnalysisPass());
+  addPass(PM, createBasicAliasAnalysisPass());
+
   addPass(PM, createCFGSimplificationPass());    // Clean up disgusting code
   addPass(PM, createPromoteMemoryToRegisterPass());// Kill useless allocas
   addPass(PM, createGlobalOptimizerPass());      // Optimize out global vars
