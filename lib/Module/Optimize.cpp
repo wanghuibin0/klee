@@ -29,6 +29,8 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
 
+#include "llvm/Analysis/InlineCost.h"
+
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
 #include "llvm/IR/Verifier.h"
 #else

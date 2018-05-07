@@ -135,6 +135,6 @@ Searcher *klee::constructUserSearcher(Executor &executor) {
   return searcher;
 }
 
-Searcher *klee::constructUserSearcher(FuncExecutor &executor) {
+Searcher *klee::constructUserSearcher(CSExecutor &executor) {
   return getNewSearcher(Searcher::DFS, executor);
 }

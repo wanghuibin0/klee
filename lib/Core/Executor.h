@@ -73,8 +73,6 @@ namespace klee {
   class MergeHandler;
   template<class T> class ref;
 
-  bool isPure(llvm::Function *f);
-
   enum SubpathEndReason {
     Abort,
     Assert,
@@ -110,21 +108,31 @@ namespace klee {
     std::vector<ref<Expr>> context;
     std::vector<ref<Expr>> args;
     std::vector<std::shared_ptr<PathSummary>> subpaths;
-    Summary(llvm::Function*, KModule*, std::vector<ref<Expr>>&);
-    Summary(llvm::Function*, KModule*);
+    //Summary(llvm::Function*, KModule*, std::vector<ref<Expr>>&);
+    //Summary(llvm::Function*, KModule*);
 
     void dump() {
       unsigned n = subpaths.size();
+      llvm::errs() << "context: \n";
+      printV(context);
+      llvm::errs() << "args: \n";
+      printV(args);
       for (unsigned i = 0; i < n; ++i) {
         llvm::errs() << "path" << i << ": \n";
         subpaths[i]->dump();
       }
     }
+    void printV(std::vector<ref<Expr>> &v) {
+      unsigned n = v.size();
+      for (unsigned i = 0; i < n; ++i) {
+        llvm::errs() << "ele" << i << ": \n";
+        v[i]->dump();
+      }
+    }
   };
 
   typedef std::map<llvm::Function*, std::shared_ptr<Summary>> SummaryMap;
-
-  //SummaryMap smap;
+  typedef std::multimap<llvm::Function*, std::shared_ptr<Summary>> SummaryMultiMap;
 
 
   /// \todo Add a context object to keep track of data only live
@@ -259,7 +267,7 @@ protected:
   double coreSolverTimeout;
 
   /// Assumes ownership of the created array objects
-  //ArrayCache arrayCache;
+  ArrayCache &arrayCache;
 
   /// File to print executed instructions to
   llvm::raw_ostream *debugInstFile;
@@ -511,8 +519,8 @@ protected:
 
 public:
   Executor(llvm::LLVMContext &ctx, const InterpreterOptions &opts,
-      InterpreterHandler *ie);
-  Executor(const Executor&);
+      InterpreterHandler *ie, ArrayCache &);
+  Executor(const Executor&, ArrayCache &);
   virtual ~Executor();
 
   const InterpreterHandler& getHandler() {
@@ -589,20 +597,41 @@ public:
                     std::shared_ptr<Summary> sum, 
                     std::vector< ref<Expr> > &arguments);
   virtual void storeSubpathSummary(ExecutionState &state, ref<Expr> retVal);
+  bool isPure(llvm::Function *f) const;
 };
 
-class FuncExecutor : public Executor {
+class CSExecutor : public Executor {
 public:
-  //Summary *summarizing;
+  ExecutionState *initialState;
   std::shared_ptr<Summary> summarizing;
 
 public:
-  FuncExecutor(const Executor &e, llvm::Function *f);
-  //virtual ~FuncExecutor();
+  CSExecutor(const Executor &e, ArrayCache &ac);
+  // there is no need to free initialState because it has been terminated
+  //virtual ~CSExecutor();
 
   void runFunction(llvm::Function*);
-  virtual void storeSubpathSummary(ExecutionState &state, ref<Expr> retVal);
+  void storeSubpathSummary(ExecutionState &state, ref<Expr> retVal) override;
 };
+
+class BUCSExecutor : public CSExecutor {
+public:
+  BUCSExecutor(const Executor &e, ArrayCache &ac, llvm::Function *f,
+             ExecutionState &es, std::vector<ref<Expr>> &args);
+  virtual void init(llvm::Function *f,
+    std::vector<ref<Expr>> &constraints,
+    std::vector<ref<Expr>> &args);
+};
+
+class TDCSExecutor : public CSExecutor {
+public:
+  TDCSExecutor(const Executor &e, ArrayCache &ac, llvm::Function *f,
+             ExecutionState &es, std::vector<ref<Expr>> &args);
+  virtual void init(llvm::Function *f,
+    std::vector<ref<Expr>> &constraints,
+    std::vector<ref<Expr>> &args);
+};
+
 
 } // End klee namespace
 

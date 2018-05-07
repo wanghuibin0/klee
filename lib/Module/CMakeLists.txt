@@ -7,6 +7,7 @@
 #
 #===------------------------------------------------------------------------===#
 klee_add_component(kleeModule
+  RecursionFinder.cpp
   Checks.cpp
   InstructionInfoTable.cpp
   InstructionOperandTypeCheckPass.cpp
@@ -44,3 +45,5 @@ target_link_libraries(kleeModule PRIVATE
   # `kleeCore` uses `kleeModule`.
   kleeCore
 )
+
+add_subdirectory(IntervalAnalysis)

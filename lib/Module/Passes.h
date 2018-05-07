@@ -18,6 +18,10 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/ADT/SCCIterator.h"
+
+#include <set>
 
 namespace llvm {
   class Function;
@@ -178,6 +182,18 @@ public:
   bool runOnModule(llvm::Module &M);
   bool checkPassed() const { return instructionOperandsConform; }
 };
+
+class RecursionFinderPass : public llvm::ModulePass {
+public:
+  static char ID;
+  RecursionFinderPass();
+  bool runOnModule(llvm::Module &M);
+  virtual void getAnalysisUsage(llvm::AnalysisUsage &AU) const {
+    AU.setPreservesAll();
+    AU.addRequired<llvm::CallGraph>();
+  }
+};
+
 }
 
 #endif

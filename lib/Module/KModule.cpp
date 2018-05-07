@@ -220,6 +220,7 @@ void KModule::prepare(const Interpreter::ModuleOptions &opts,
   // deleted (via RAUW). This can be removed once LLVM fixes this
   // issue.
   pm.add(new IntrinsicCleanerPass(*targetData, false));
+  pm.add(new RecursionFinderPass());
   pm.run(*module);
 
   if (opts.Optimize)

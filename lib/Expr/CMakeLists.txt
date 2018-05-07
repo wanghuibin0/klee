@@ -7,6 +7,7 @@
 #
 #===------------------------------------------------------------------------===#
 klee_add_component(kleaverExpr
+  SymbolicArrayRefresher.cpp
   ArrayCache.cpp
   Assigment.cpp
   Constraints.cpp
