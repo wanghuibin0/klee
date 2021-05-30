@@ -7,6 +7,8 @@
 #
 #===------------------------------------------------------------------------===#
 klee_add_component(kleeCore
+  InterpreterManager.cpp
+  CSExecutor.cpp
   AddressSpace.cpp
   MergeHandler.cpp
   CallPathManager.cpp
