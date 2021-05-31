@@ -25,7 +25,7 @@ cl::opt<InterpreterType> InterpreterToUse(
     cl::init(NOCSE), cl::cat(InterpreterCat));
 } // namespace klee
 
-Summary *InterpreterManager::getSummary(llvm::Function *f) {
+Summary *BUCSEInterpreterManager::getSummary(llvm::Function *f) {
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
     Summary *sum = computeSummary(f);
@@ -36,12 +36,13 @@ Summary *InterpreterManager::getSummary(llvm::Function *f) {
   }
 }
 
-void InterpreterManager::putSummaryToLib(llvm::Function *f, Summary *summary) {
+void BUCSEInterpreterManager::putSummaryToLib(llvm::Function *f,
+                                              Summary *summary) {
   assert(summaryLib.find(f) == summaryLib.end());
   summaryLib.insert(std::make_pair(f, summary));
 }
 
-Summary *InterpreterManager::computeSummary(llvm::Function *f) {
+Summary *BUCSEInterpreterManager::computeSummary(llvm::Function *f) {
   // TODO: placeholder to be filled
   return nullptr;
   CSExecutor *executor = createCSExecutor(f);
@@ -50,6 +51,6 @@ Summary *InterpreterManager::computeSummary(llvm::Function *f) {
   return sum;
 }
 
-CSExecutor *InterpreterManager::createCSExecutor(llvm::Function *f) {
-  return new CSExecutor();
+CSExecutor *BUCSEInterpreterManager::createCSExecutor(llvm::Function *f) {
+  return new CSExecutor(proto);
 }

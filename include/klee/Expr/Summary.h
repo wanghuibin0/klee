@@ -17,10 +17,12 @@ public:
       : preCond(pre), postCond(post) {}
 };
 class Summary {
+  std::vector<ref<Expr>> context;
+  std::vector<ref<Expr>> args;
   std::vector<PathSummary *> pathSummaries;
 
 public:
-  Summary() : pathSummaries() {}
+  Summary() {}
   void addPathSummary(PathSummary *ps) { pathSummaries.push_back(ps); }
 };
 

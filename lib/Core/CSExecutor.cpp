@@ -4,7 +4,7 @@
 
 using namespace klee;
 
-CSExecutor::CSExecutor() {}
+CSExecutor::CSExecutor(const Executor &proto) : Executor(proto) {}
 
 void CSExecutor::run() {}
 Summary *CSExecutor::extractSummary() { return new Summary(); }

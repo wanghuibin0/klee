@@ -8,9 +8,11 @@ namespace klee {
 
 class CSExecutor : public Executor {
 public:
-  CSExecutor();
+  CSExecutor(const Executor &proto);
   void run();
   Summary *extractSummary();
+
+private:
 };
 
 } // namespace klee
