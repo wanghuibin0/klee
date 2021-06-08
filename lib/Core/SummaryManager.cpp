@@ -1,4 +1,4 @@
-#include "klee/Core/InterpreterManager.h"
+#include "klee/Core/SummaryManager.h"
 #include "CSExecutor.h"
 
 #include "llvm/Support/CommandLine.h"
@@ -25,7 +25,15 @@ cl::opt<InterpreterType> InterpreterToUse(
     cl::init(NOCSE), cl::cat(InterpreterCat));
 } // namespace klee
 
-Summary *BUCSEInterpreterManager::getSummary(llvm::Function *f) {
+SummaryManager *SummaryManager::createSummaryManager(const Executor &mainExecutor) {
+  if (InterpreterToUse == BUCSE) {
+    return new BUCSESummaryManager(mainExecutor);
+  } else {
+    return nullptr;
+  }
+}
+
+Summary *BUCSESummaryManager::getSummary(llvm::Function *f) {
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
     Summary *sum = computeSummary(f);
@@ -36,21 +44,19 @@ Summary *BUCSEInterpreterManager::getSummary(llvm::Function *f) {
   }
 }
 
-void BUCSEInterpreterManager::putSummaryToLib(llvm::Function *f,
-                                              Summary *summary) {
+void BUCSESummaryManager::putSummaryToLib(llvm::Function *f, Summary *summary) {
   assert(summaryLib.find(f) == summaryLib.end());
   summaryLib.insert(std::make_pair(f, summary));
 }
 
-Summary *BUCSEInterpreterManager::computeSummary(llvm::Function *f) {
+Summary *BUCSESummaryManager::computeSummary(llvm::Function *f) {
   // TODO: placeholder to be filled
-  return nullptr;
-  CSExecutor *executor = createCSExecutor(f);
+  BUCSExecutor *executor = createBUCSExecutor(f);
   executor->run();
   Summary *sum = executor->extractSummary();
   return sum;
 }
 
-CSExecutor *BUCSEInterpreterManager::createCSExecutor(llvm::Function *f) {
-  return new CSExecutor(proto);
+BUCSExecutor *BUCSESummaryManager::createBUCSExecutor(llvm::Function *f) {
+  return new BUCSExecutor(proto, f);
 }

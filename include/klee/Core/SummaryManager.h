@@ -18,43 +18,35 @@ class Interpreter;
 
 enum InterpreterType { BUCSE, TDCSE, CTXCSE, NOCSE };
 
-class InterpreterManager {
+class SummaryManager {
 public:
-  // ctors
-  InterpreterManager(const Executor &mainExecutor) : proto(mainExecutor) {}
+  SummaryManager() {}
 
-  Summary *getSummary(llvm::Function *f);
-
-private:
-  Summary *computeSummary(llvm::Function *f);
-  void putSummaryToLib(llvm::Function *f, Summary *sum);
-  CSExecutor *createCSExecutor(llvm::Function *f);
-
-protected:
-  Executor proto;
+  static SummaryManager *createSummaryManager(const Executor &mainExecutor);
+  virtual Summary *getSummary(llvm::Function *f) = 0;
 };
 
-class BUCSEInterpreterManager : public InterpreterManager {
+class BUCSESummaryManager : public SummaryManager {
 public:
   // ctors
-  BUCSEInterpreterManager(const Executor &mainExecutor)
-      : InterpreterManager(mainExecutor) {}
+  BUCSESummaryManager(const Executor &mainExecutor) : proto(mainExecutor) {}
 
   Summary *getSummary(llvm::Function *f);
 
 private:
   Summary *computeSummary(llvm::Function *f);
   void putSummaryToLib(llvm::Function *f, Summary *sum);
-  CSExecutor *createCSExecutor(llvm::Function *f);
+  BUCSExecutor *createBUCSExecutor(llvm::Function *f);
 
 private:
   std::map<llvm::Function *, Summary *> summaryLib;
+  const Executor proto;
 };
 
-// class InterpreterManager {
+// class SummaryManager {
 // public:
 //   // ctors
-//   InterpreterManager(enum InterpreterType type) : type(type) {}
+//   SummaryManager(enum InterpreterType type) : type(type) {}
 
 //   Summary *getSummary(llvm::Function *f);
 
@@ -67,10 +59,10 @@ private:
 //   std::map<llvm::Function *, Summary *> summaryLib;
 // };
 
-// class InterpreterManager {
+// class SummaryManager {
 // public:
 //   // ctors
-//   InterpreterManager(enum InterpreterType type) : type(type) {}
+//   SummaryManager(enum InterpreterType type) : type(type) {}
 
 //   Summary *getSummary(llvm::Function *f);
 

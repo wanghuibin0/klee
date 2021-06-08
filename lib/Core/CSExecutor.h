@@ -6,13 +6,14 @@
 
 namespace klee {
 
-class CSExecutor : public Executor {
+class BUCSExecutor : public Executor {
 public:
-  CSExecutor(const Executor &proto);
+  BUCSExecutor(const Executor &proto, const llvm::Function *f);
   void run();
   Summary *extractSummary();
 
 private:
+  const llvm::Function *func;
 };
 
 } // namespace klee

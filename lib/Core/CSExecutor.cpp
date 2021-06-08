@@ -4,7 +4,8 @@
 
 using namespace klee;
 
-CSExecutor::CSExecutor(const Executor &proto) : Executor(proto) {}
+BUCSExecutor::BUCSExecutor(const Executor &proto, const llvm::Function *f)
+    : Executor(proto), func(f) {}
 
-void CSExecutor::run() {}
-Summary *CSExecutor::extractSummary() { return new Summary(); }
+void BUCSExecutor::run() {}
+Summary *BUCSExecutor::extractSummary() { return new Summary(); }

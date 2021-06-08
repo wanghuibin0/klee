@@ -80,6 +80,8 @@ class MergeHandler;
 class MergingSearcher;
 template <class T> class ref;
 
+class SummaryManager;
+
 /// \todo Add a context object to keep track of data only live
 /// during an instruction step. Should contain addedStates,
 /// removedStates, and haltExecution, among others.
@@ -123,9 +125,10 @@ private:
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
 
+  SummaryManager *summaryManager;
+
   // ExternalDispatcher *externalDispatcher;
   std::shared_ptr<ExternalDispatcher> externalDispatcher;
-  // TimingSolver *solver;
   std::shared_ptr<TimingSolver> solver;
   MemoryManager *memory;
   std::set<ExecutionState *, ExecutionStateIDCompare> states;
@@ -471,6 +474,10 @@ public:
   virtual ~Executor();
 
   const InterpreterHandler &getHandler() { return *interpreterHandler; }
+
+  void setSummaryManager(SummaryManager *sm) {
+    summaryManager = sm;
+  }
 
   void setPathWriter(TreeStreamWriter *tsw) override { pathWriter = tsw; }
 

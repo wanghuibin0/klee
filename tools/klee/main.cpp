@@ -24,6 +24,9 @@
 #include "klee/Support/PrintVersion.h"
 #include "klee/System/Time.h"
 
+#include "../lib/Core/Executor.h"
+#include "klee/Core/SummaryManager.h"
+
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
@@ -136,7 +139,7 @@ namespace {
   RunInDir("run-in-dir",
            cl::desc("Change to the given directory before starting execution (default=location of tested file)."),
            cl::cat(StartCat));
-  
+
   cl::opt<std::string>
   OutputDir("output-dir",
             cl::desc("Directory in which to write results (default=klee-out-<N>)"),
@@ -158,7 +161,7 @@ namespace {
   WarnAllExternals("warn-all-external-symbols",
                    cl::desc("Issue a warning on startup for all external symbols (default=false)."),
                    cl::cat(StartCat));
-  
+
 
   /*** Linking options ***/
 
@@ -224,10 +227,10 @@ namespace {
 
 
   /*** Replaying options ***/
-  
+
   cl::OptionCategory ReplayCat("Replaying options",
                                "These options impact replaying of test cases.");
-  
+
   cl::opt<bool>
   ReplayKeepSymbolic("replay-keep-symbolic",
                      cl::desc("Replay the test cases only by asserting "
@@ -1414,6 +1417,11 @@ int main(int argc, char **argv, char **envp) {
     interpreter->setReplayPath(&replayPath);
   }
 
+  // for compostional SE
+  // create SummaryManager
+  Executor *e = static_cast<Executor*>(interpreter);
+  SummaryManager *sm = SummaryManager::createSummaryManager(*e);
+  e->setSummaryManager(sm);
 
   auto startTime = std::time(nullptr);
   { // output clock info and start time

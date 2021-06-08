@@ -421,6 +421,7 @@ const char *Executor::TerminateReasonNames[] = {
 Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                    InterpreterHandler *ih)
     : Interpreter(opts), interpreterHandler(ih), searcher(0),
+      summaryManager(0),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
       pathWriter(0), symPathWriter(0),
       specialFunctionHandler(0), timers{time::Span(TimerInterval)},
@@ -450,8 +451,8 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
       interpreterHandler->getOutputFilename(ALL_QUERIES_KQUERY_FILE_NAME),
       interpreterHandler->getOutputFilename(SOLVER_QUERIES_KQUERY_FILE_NAME));
 
-  // this->solver = new TimingSolver(solver, EqualitySubstitution);
   this->solver.reset(new TimingSolver(solver, EqualitySubstitution));
+  // this->solver = new TimingSolver(solver, EqualitySubstitution);
   memory = new MemoryManager(&arrayCache);
 
   initializeSearchOptions();
@@ -555,6 +556,7 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 Executor::Executor(const Executor &e)
     : Interpreter(e.interpreterOpts), kmodule(e.kmodule),
       interpreterHandler(e.interpreterHandler), searcher(0),
+      summaryManager(e.summaryManager),
       externalDispatcher(e.externalDispatcher), solver(e.solver),
       memory(new MemoryManager(&arrayCache)), statsTracker(0), pathWriter(0),
       symPathWriter(0),
@@ -4107,7 +4109,8 @@ void Executor::executeMemoryOperation(
   ObjectPair op;
   bool success;
   solver->setTimeout(coreSolverTimeout);
-  if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
+  if (!state.addressSpace.resolveOne(state, solver.get(), address, op,
+                                     success)) {
     address = toConstant(state, address, "resolveOne failure");
     success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
   }
@@ -4164,8 +4167,8 @@ void Executor::executeMemoryOperation(
   address = optimizer.optimizeExpr(address, true);
   ResolutionList rl;
   solver->setTimeout(coreSolverTimeout);
-  bool incomplete = state.addressSpace.resolve(state, solver, address, rl, 0,
-                                               coreSolverTimeout);
+  bool incomplete = state.addressSpace.resolve(state, solver.get(), address, rl,
+                                               0, coreSolverTimeout);
   solver->setTimeout(time::Span());
 
   // XXX there is some query wasteage here. who cares?
