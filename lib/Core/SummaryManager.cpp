@@ -33,20 +33,15 @@ SummaryManager *SummaryManager::createSummaryManager(const Executor &mainExecuto
   }
 }
 
-Summary *BUCSESummaryManager::getSummary(llvm::Function *f) {
+Summary *BUCSESummaryManager::getSummary(ExecutionState &es, llvm::Function *f) {
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
     Summary *sum = computeSummary(f);
-    putSummaryToLib(f, sum);
+    summaryLib.insert(std::make_pair(f, sum));
     return sum;
   } else {
     return summaryLib[f];
   }
-}
-
-void BUCSESummaryManager::putSummaryToLib(llvm::Function *f, Summary *summary) {
-  assert(summaryLib.find(f) == summaryLib.end());
-  summaryLib.insert(std::make_pair(f, summary));
 }
 
 Summary *BUCSESummaryManager::computeSummary(llvm::Function *f) {

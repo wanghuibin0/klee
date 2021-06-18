@@ -27,6 +27,8 @@
 #include "klee/Module/KModule.h"
 #include "klee/System/Time.h"
 
+#include "klee/Expr/Summary.h"
+
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -118,7 +120,7 @@ public:
   /// The random number generator.
   RNG theRNG;
 
-private:
+protected:
   static const char *TerminateReasonNames[];
 
   std::shared_ptr<KModule> kmodule;
@@ -138,7 +140,7 @@ private:
   // SpecialFunctionHandler *specialFunctionHandler;
   std::shared_ptr<SpecialFunctionHandler> specialFunctionHandler;
   TimerGroup timers;
-  std::shared_ptr<PTree> processTree;
+  std::unique_ptr<PTree> processTree;
 
   /// Used to track states that have been added during the current
   /// instructions step.
@@ -324,6 +326,12 @@ private:
   void executeCall(ExecutionState &state, KInstruction *ki, llvm::Function *f,
                    std::vector<ref<Expr>> &arguments);
 
+  bool executeCallCompositionally(ExecutionState &state, KInstruction *ki, llvm::Function *f,
+                   std::vector<ref<Expr>> &arguments);
+
+  // apply the summary found to current state, may generate multitude state.
+  void applySummary(ExecutionState &state, Summary *s);
+
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
   void executeMemoryOperation(ExecutionState &state, bool isWrite,
@@ -414,13 +422,13 @@ private:
   bool shouldExitOn(enum TerminateReason termReason);
 
   // remove state from queue and delete
-  void terminateState(ExecutionState &state);
+  virtual void terminateState(ExecutionState &state);
   // call exit handler and terminate state
-  void terminateStateEarly(ExecutionState &state, const llvm::Twine &message);
+  virtual void terminateStateEarly(ExecutionState &state, const llvm::Twine &message);
   // call exit handler and terminate state
-  void terminateStateOnExit(ExecutionState &state);
+  virtual void terminateStateOnExit(ExecutionState &state);
   // call error handler and terminate state
-  void terminateStateOnError(ExecutionState &state, const llvm::Twine &message,
+  virtual void terminateStateOnError(ExecutionState &state, const llvm::Twine &message,
                              enum TerminateReason termReason,
                              const char *suffix = NULL,
                              const llvm::Twine &longMessage = "");

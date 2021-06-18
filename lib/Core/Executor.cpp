@@ -52,6 +52,8 @@
 #include "klee/System/MemoryUsage.h"
 #include "klee/System/Time.h"
 
+#include "klee/Core/SummaryManager.h"
+
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/Attributes.h"
@@ -420,8 +422,7 @@ const char *Executor::TerminateReasonNames[] = {
 
 Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                    InterpreterHandler *ih)
-    : Interpreter(opts), interpreterHandler(ih), searcher(0),
-      summaryManager(0),
+    : Interpreter(opts), interpreterHandler(ih), searcher(0), summaryManager(0),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
       pathWriter(0), symPathWriter(0),
       specialFunctionHandler(0), timers{time::Span(TimerInterval)},
@@ -562,7 +563,7 @@ Executor::Executor(const Executor &e)
       symPathWriter(0),
       specialFunctionHandler(e.specialFunctionHandler), timers{time::Span(
                                                             TimerInterval)},
-      processTree(0), replayKTest(0), replayPath(0), usingSeeds(0),
+      /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
       atMemoryLimit(false), inhibitForking(false), haltExecution(false),
       ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout),
       debugInstFile(0), debugLogBuffer(debugBufferString) {}
@@ -1638,8 +1639,35 @@ ref<klee::ConstantExpr> Executor::getEhTypeidFor(ref<Expr> type_info) {
   return res;
 }
 
+/// execute function f compositionally, if success, return true; otherwise
+/// return false
+bool Executor::executeCallCompositionally(ExecutionState &state,
+                                          KInstruction *ki, Function *f,
+                                          std::vector<ref<Expr>> &arguments) {
+  llvm::outs() << "compositional execution for function " << f->getName()
+               << "\n";
+
+  SummaryManager *sm = summaryManager;
+  Summary *summary = sm->getSummary(state, f);
+  if (summary) {
+    applySummary(state, summary);
+    llvm::outs() << "success: compositional execution for function "
+                 << f->getName() << "\n";
+  } else {
+    llvm::outs() << "cannot get valid summary, fallback to normal SE\n";
+  }
+  return true;
+}
+
+void Executor::applySummary(ExecutionState &state, Summary *s) {
+  // TODO:
+}
+
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            std::vector<ref<Expr>> &arguments) {
+  if (InterpreterToUse != NOCSE &&
+      executeCallCompositionally(state, ki, f, arguments))
+    return;
   Instruction *i = ki->inst;
   if (isa_and_nonnull<DbgInfoIntrinsic>(i))
     return;

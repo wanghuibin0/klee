@@ -5,6 +5,7 @@
 //#include "klee/Expr/Expr.h"
 #include "../lib/Core/CSExecutor.h"
 #include "klee/Expr/Summary.h"
+#include "llvm/Support/CommandLine.h"
 
 #include <map>
 #include <vector>
@@ -18,12 +19,14 @@ class Interpreter;
 
 enum InterpreterType { BUCSE, TDCSE, CTXCSE, NOCSE };
 
+extern llvm::cl::opt<InterpreterType> InterpreterToUse;
+
 class SummaryManager {
 public:
   SummaryManager() {}
 
   static SummaryManager *createSummaryManager(const Executor &mainExecutor);
-  virtual Summary *getSummary(llvm::Function *f) = 0;
+  virtual Summary *getSummary(ExecutionState &es, llvm::Function *f) = 0;
 };
 
 class BUCSESummaryManager : public SummaryManager {
@@ -31,11 +34,10 @@ public:
   // ctors
   BUCSESummaryManager(const Executor &mainExecutor) : proto(mainExecutor) {}
 
-  Summary *getSummary(llvm::Function *f);
+  Summary *getSummary(ExecutionState &es, llvm::Function *f);
 
 private:
   Summary *computeSummary(llvm::Function *f);
-  void putSummaryToLib(llvm::Function *f, Summary *sum);
   BUCSExecutor *createBUCSExecutor(llvm::Function *f);
 
 private:
