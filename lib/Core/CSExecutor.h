@@ -2,7 +2,6 @@
 #define KLEE_CSEXECUTOR_H
 
 #include "Executor.h"
-#include "klee/Expr/Summary.h"
 
 namespace klee {
 

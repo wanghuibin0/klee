@@ -27,8 +27,6 @@
 #include "klee/Module/KModule.h"
 #include "klee/System/Time.h"
 
-#include "klee/Expr/Summary.h"
-
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -82,6 +80,7 @@ class MergeHandler;
 class MergingSearcher;
 template <class T> class ref;
 
+class Summary;
 class SummaryManager;
 
 /// \todo Add a context object to keep track of data only live
@@ -550,6 +549,56 @@ public:
 
   MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
   void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
+};
+
+// summary and executor depends on each other, so we put them together.
+class PathSummary {
+
+};
+
+class NormalPathSummary : public PathSummary {
+  ConstraintSet preCond;
+  bool isVoidRet;
+  ref<Expr> retVal;
+  std::map<llvm::GlobalValue*, ref<Expr>> globalsMod;
+
+public:
+  NormalPathSummary() = default;
+  void setPreCond(const ConstraintSet &cs) { preCond = cs; }
+  void markVoidRet(bool isVoidRet) { this->isVoidRet = isVoidRet; }
+  void setRetValue(ref<Expr> ret) {
+    assert(isVoidRet == false);
+    retVal = ret;
+  }
+  void addGlobalsModified(llvm::GlobalValue *gv, ref<Expr> val) {
+    globalsMod.insert(std::make_pair(gv, val));
+  }
+};
+
+class ErrorPathSummary : public PathSummary {
+  ConstraintSet preCond;
+  enum Executor::TerminateReason tr;
+public:
+  ErrorPathSummary(ConstraintSet &cs, enum Executor::TerminateReason tr) : preCond(cs), tr(tr) {}
+  ConstraintSet &getPreCond() { return preCond; }
+  enum Executor::TerminateReason getTerminateReason() { return tr; }
+};
+
+
+
+class Summary {
+  llvm::Function *function;
+  std::vector<ConstraintSet *> context;
+  std::map<llvm::Value*, ref<Expr>> args;
+  std::map<llvm::GlobalValue*, ref<Expr>> globals;
+  std::vector<PathSummary *> pathSummaries;
+
+public:
+  Summary(llvm::Function *f) : function(f) {}
+  void addPathSummary(PathSummary *ps) { pathSummaries.push_back(ps); }
+  void addContext(ConstraintSet &c) { context.push_back(&c); }
+  void addArg(llvm::Value *farg, ref<Expr> arg) { args.insert(std::make_pair(farg, arg)); }
+  llvm::Function *getFunction() { return function; }
 };
 
 } // namespace klee

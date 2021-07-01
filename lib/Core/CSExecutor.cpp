@@ -2,8 +2,6 @@
 #include "MemoryManager.h"
 #include "Searcher.h"
 
-#include "klee/Expr/Summary.h"
-
 #include "klee/Core/SummaryManager.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -48,8 +46,8 @@ Summary *BUCSExecutor::extractSummary() { return summary; }
 
 ExecutionState *BUCSExecutor::createInitialState(Function *f) {
   ExecutionState *state = new ExecutionState(kmodule->functionMap[f]);
-  makeArgsSymbolic(state);
   initializeGlobals(*state);
+  makeArgsSymbolic(state);
   return state;
 }
 
@@ -97,7 +95,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       res = Expr::createTempRead(array, w);
     }
     bindArgument(kf, i, *state, res);
-    summary->addArg(res);
+    summary->addArg(arg, res);
     ++arg_it;
   }
 }
@@ -129,7 +127,7 @@ void BUCSExecutor::terminateStateEarly(ExecutionState &state,
 void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
   // this state has been terminate normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
-  ConstraintSet precond = state.constraints;
+
   // we use prevPC because pc has been updated in stepInstruction
   KInstruction *ki = state.prevPC;
   Instruction *i = ki->inst;
@@ -137,7 +135,7 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
   bool isVoidReturn = (ri->getNumOperands() == 0);
 
   // construct a path summary
-  PathSummary *ps = new PathSummary();
+  NormalPathSummary *ps = new NormalPathSummary();
   ps->setPreCond(state.constraints);
   ps->markVoidRet(isVoidReturn);
 
@@ -161,6 +159,8 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
     ref<Expr> gVal = os->read(0, w);
     ps->addGlobalsModified(g, gVal);
   }
+
+  summary->addPathSummary(ps);
 
   terminateState(state);
 }
