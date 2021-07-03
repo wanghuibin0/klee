@@ -35,6 +35,7 @@
 #include "klee/Expr/ExprPPrinter.h"
 #include "klee/Expr/ExprSMTLIBPrinter.h"
 #include "klee/Expr/ExprUtil.h"
+#include "klee/Expr/ExprReplaceVisitor.h"
 #include "klee/Module/Cell.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KInstruction.h"
@@ -1200,6 +1201,12 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   if (ivcEnabled)
     doImpliedValueConcretization(state, condition,
                                  ConstantExpr::alloc(1, Expr::Bool));
+}
+
+void Executor::addConstraint(ExecutionState &state, const ConstraintSet &conditions) {
+  for (auto x : conditions) {
+    addConstraint(state, x);
+  }
 }
 
 const Cell &Executor::eval(KInstruction *ki, unsigned index,
@@ -4720,6 +4727,139 @@ void Executor::dumpStates() {
 
   ::dumpStates = 0;
 }
+
+// check whether the context of summary is compatible with the state.
+bool Executor::checkCompatible(ExecutionState &es, Summary &sum) {
+  ref<Expr> context = sum.getContext();
+  // fast path
+  if (context->isTrue()) {
+    return true;
+  }
+
+  // given that the path constraint is represented as p, context as q
+  // if p and q satisfy p->q,
+  // we know that path constraint p and context are compatible
+
+  Solver::Validity res;
+  time::Span timeout = coreSolverTimeout;
+  solver->setTimeout(timeout);
+  bool success = solver->evaluate(es.constraints, context, res,
+                                  es.queryMetaData);
+  solver->setTimeout(time::Span());
+  if (!success) {
+    es.pc = es.prevPC;
+    // TODO: is it proper to do it here?
+    terminateStateEarly(es, "Query timed out (checkCompatible).");
+    return false;
+  } else if (res == Solver::True) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+
+// precondition: the summary is compatible with es
+// Update: need actual arguments to do substitution.
+void Executor::applySummaryToAState(ExecutionState &es,
+                                    std::map<llvm::Value*, ref<Expr>> &args,
+                                    Summary &sum) {
+  // construct the substitution map: formalArg -> actualArg
+  // do it here because it is convenient to access formalArg from sum.
+  const auto &formalArgs = sum.getFormalArgs();
+  const auto &actualArgs = args;
+  std::map<ref<Expr>, ref<Expr>> replaceMap;
+  for (auto x : formalArgs) {
+    auto value = x.first;
+    auto formalArg = x.second;
+    auto actualArg = actualArgs.at(value);
+    replaceMap.insert(std::make_pair(formalArg, actualArg));
+  }
+
+  // update: globals should be put into the map, too.
+  const auto &formalGlobals = sum.getFormalGlobals();
+  // now we know all GlobalValue* from formalGlobals,
+  // we should use them to find the current value of these globals in current
+  // state.
+  for (auto x : formalGlobals) {
+    llvm::GlobalValue *gv = x.first;
+    llvm::Type *ty = gv->getType();
+    assert(isa<llvm::PointerType>(ty));
+    llvm::Type *gTy = cast<llvm::PointerType>(ty)->getElementType();
+    Expr::Width w = getWidthForLLVMType(gTy);
+
+    ref<Expr> formalG = x.second;
+    MemoryObject *mo = globalObjects.at(gv);
+    const ObjectState *os = es.addressSpace.findObject(mo);
+    ref<Expr> actualG = os->read(0, w);
+
+    replaceMap.insert(std::make_pair(formalG, actualG));
+  }
+
+  // do the actual substitution
+  ExprReplaceVisitor2 erv(replaceMap);
+
+  const std::vector<NormalPathSummary *> &normalPathSummaries =
+      sum.getNormalPathSummaries();
+  const std::vector<ErrorPathSummary *> &errorPathSummaries =
+      sum.getErrorPathSummaries();
+
+  for (auto nps : normalPathSummaries) {
+    ExecutionState *newState = applyNormalPathSummaryToAState(es, erv, nps);
+    addedStates.push_back(newState);
+  }
+
+  for (auto eps : errorPathSummaries) {
+    // record the pre condition and termination reason, but do not generate new
+    // states.
+    applyErrorPathSummaryToAState(es, eps);
+  }
+  // delete the original state
+  removedStates.push_back(&es);
+}
+
+// apply a path summary to current state and generate a new state.
+ExecutionState *
+Executor::applyNormalPathSummaryToAState(ExecutionState &es,
+                                         ExprReplaceVisitor2 &replaceMap,
+                                         NormalPathSummary *nps) {
+  // construct a new state
+  ExecutionState *newState = new ExecutionState(es);
+
+  // for precondition, replace formal args with actual args
+  // then push them into path constrait.
+  for (auto pre : nps->getPreCond()) {
+    addConstraint(*newState, replaceMap.visit(pre));
+  }
+
+  // for ret result
+  if (!nps->getIsVoidRet()) {
+    auto retVal = replaceMap.visit(nps->getRetVal());
+    // TODO: bind it with the Instruction pointed by prevPc.
+    bindLocal(newState->prevPC, *newState, retVal);
+  }
+
+  // for globals
+  for (auto x : nps->getGlobalsMod()) {
+    GlobalValue *gv = x.first;
+    MemoryObject *mo = globalObjects.at(gv);
+    const ObjectState *os = newState->addressSpace.findObject(mo);
+    ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
+
+    ref<Expr> updatedG = replaceMap.visit(x.second);
+
+    wos->write(0, updatedG);
+  }
+
+  return newState;
+}
+
+// apply an error path summary to current state and generate a new error path
+// summary for this function.
+void Executor::applyErrorPathSummaryToAState(ExecutionState &es, ErrorPathSummary *nps) {
+  return;
+}
+
 
 ///
 

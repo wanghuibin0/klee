@@ -26,6 +26,7 @@
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
 #include "klee/System/Time.h"
+#include "klee/Expr/ExprReplaceVisitor.h"
 
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -80,6 +81,8 @@ class MergeHandler;
 class MergingSearcher;
 template <class T> class ref;
 
+class NormalPathSummary;
+class ErrorPathSummary;
 class Summary;
 class SummaryManager;
 
@@ -358,6 +361,7 @@ protected:
   /// which also manages propagation of implied values,
   /// validity checks, and seed patching.
   void addConstraint(ExecutionState &state, ref<Expr> condition);
+  void addConstraint(ExecutionState &state, const ConstraintSet &conditions);
 
   // Called on [for now] concrete reads, replaces constant with a symbolic
   // Used for testing.
@@ -549,14 +553,23 @@ public:
 
   MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
   void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
+
+  // check whether the context of summary is compatible with the state.
+  bool checkCompatible(ExecutionState &es, Summary &sum);
+  // apply summary to a state, may generate new states, delete states, set
+  // flags to executor.
+  void applySummaryToAState(ExecutionState &es,
+                            std::map<llvm::Value *, ref<Expr>> &args,
+                            Summary &sum);
+  ExecutionState *applyNormalPathSummaryToAState(ExecutionState &es,
+                                                 ExprReplaceVisitor2 &replaceMap,
+                                                 NormalPathSummary *nps);
+  void applyErrorPathSummaryToAState(ExecutionState &es, ErrorPathSummary *eps);
 };
 
 // summary and executor depends on each other, so we put them together.
-class PathSummary {
 
-};
-
-class NormalPathSummary : public PathSummary {
+class NormalPathSummary {
   ConstraintSet preCond;
   bool isVoidRet;
   ref<Expr> retVal;
@@ -573,32 +586,50 @@ public:
   void addGlobalsModified(llvm::GlobalValue *gv, ref<Expr> val) {
     globalsMod.insert(std::make_pair(gv, val));
   }
+
+  const ConstraintSet &getPreCond() const { return preCond; }
+  bool getIsVoidRet() const { return isVoidRet; }
+  ref<Expr> getRetVal() const { return retVal; }
+  const std::map<llvm::GlobalValue*, ref<Expr>> &getGlobalsMod() const { return globalsMod; }
 };
 
-class ErrorPathSummary : public PathSummary {
+class ErrorPathSummary {
   ConstraintSet preCond;
   enum Executor::TerminateReason tr;
 public:
-  ErrorPathSummary(ConstraintSet &cs, enum Executor::TerminateReason tr) : preCond(cs), tr(tr) {}
-  ConstraintSet &getPreCond() { return preCond; }
-  enum Executor::TerminateReason getTerminateReason() { return tr; }
+  ErrorPathSummary(ConstraintSet &preCond, enum Executor::TerminateReason tr) : preCond(preCond), tr(tr) {}
+  const ConstraintSet &getPreCond() const { return preCond; }
+  enum Executor::TerminateReason getTerminateReason() const { return tr; }
 };
-
-
 
 class Summary {
   llvm::Function *function;
-  std::vector<ConstraintSet *> context;
+  ref<Expr> context;
   std::map<llvm::Value*, ref<Expr>> args;
   std::map<llvm::GlobalValue*, ref<Expr>> globals;
-  std::vector<PathSummary *> pathSummaries;
+  std::vector<NormalPathSummary *> normalPathSummaries;
+  std::vector<ErrorPathSummary *> errorPathSummaries;
 
 public:
   Summary(llvm::Function *f) : function(f) {}
-  void addPathSummary(PathSummary *ps) { pathSummaries.push_back(ps); }
-  void addContext(ConstraintSet &c) { context.push_back(&c); }
+
+  void addNormalPathSummary(NormalPathSummary *ps) { normalPathSummaries.push_back(ps); }
+  void addErrorPathSummary(ErrorPathSummary *ps) { errorPathSummaries.push_back(ps); }
+  void addContext(ConstraintSet &c) {
+    ref<Expr> aContext = ConstantExpr::create(1, Expr::Bool);
+    for (auto &x : c) {
+      aContext = AndExpr::create(aContext, x);
+    }
+    context = OrExpr::create(context, aContext);
+  }
   void addArg(llvm::Value *farg, ref<Expr> arg) { args.insert(std::make_pair(farg, arg)); }
-  llvm::Function *getFunction() { return function; }
+
+  llvm::Function *getFunction() const { return function; }
+  ref<Expr> getContext() const { return context; }
+  const std::map<llvm::Value*, ref<Expr>> &getFormalArgs() const { return args; }
+  const std::vector<NormalPathSummary*> &getNormalPathSummaries() const { return normalPathSummaries; }
+  const std::vector<ErrorPathSummary*> &getErrorPathSummaries() const { return errorPathSummaries; }
+  const std::map<llvm::GlobalValue*, ref<Expr>> &getFormalGlobals() const { return globals; }
 };
 
 } // namespace klee

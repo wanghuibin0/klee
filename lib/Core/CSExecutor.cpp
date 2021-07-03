@@ -160,7 +160,7 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
     ps->addGlobalsModified(g, gVal);
   }
 
-  summary->addPathSummary(ps);
+  summary->addNormalPathSummary(ps);
 
   terminateState(state);
 }
