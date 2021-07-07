@@ -1656,8 +1656,9 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
 
   SummaryManager *sm = summaryManager;
   Summary *summary = sm->getSummary(state, f);
-  if (summary) {
-    applySummary(state, summary);
+  if (summary && checkCompatible(state, *summary)) {
+    // should prepare actual arguments before application.
+    applySummary(state, arguments, summary);
     llvm::outs() << "success: compositional execution for function "
                  << f->getName() << "\n";
   } else {
@@ -1666,8 +1667,8 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
   return true;
 }
 
-void Executor::applySummary(ExecutionState &state, Summary *s) {
-  // TODO:
+void Executor::applySummary(ExecutionState &state, std::vector<ref<Expr>> &arguments, Summary *s) {
+  applySummaryToAState(state, arguments, *s);
 }
 
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
@@ -4762,18 +4763,18 @@ bool Executor::checkCompatible(ExecutionState &es, Summary &sum) {
 // precondition: the summary is compatible with es
 // Update: need actual arguments to do substitution.
 void Executor::applySummaryToAState(ExecutionState &es,
-                                    std::map<llvm::Value*, ref<Expr>> &args,
+                                    std::vector<ref<Expr>> &args,
                                     Summary &sum) {
   // construct the substitution map: formalArg -> actualArg
   // do it here because it is convenient to access formalArg from sum.
   const auto &formalArgs = sum.getFormalArgs();
   const auto &actualArgs = args;
   std::map<ref<Expr>, ref<Expr>> replaceMap;
-  for (auto x : formalArgs) {
-    auto value = x.first;
-    auto formalArg = x.second;
-    auto actualArg = actualArgs.at(value);
-    replaceMap.insert(std::make_pair(formalArg, actualArg));
+
+  // we assume that there is no var args.
+  assert(formalArgs.size() == actualArgs.size());
+  for (unsigned i = 0; i < actualArgs.size(); ++i) {
+    replaceMap.insert(std::make_pair(formalArgs[i], actualArgs[i]));
   }
 
   // update: globals should be put into the map, too.
@@ -4812,7 +4813,7 @@ void Executor::applySummaryToAState(ExecutionState &es,
   for (auto eps : errorPathSummaries) {
     // record the pre condition and termination reason, but do not generate new
     // states.
-    applyErrorPathSummaryToAState(es, eps);
+    applyErrorPathSummaryToAState(es, erv, eps);
   }
   // delete the original state
   removedStates.push_back(&es);
@@ -4840,8 +4841,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   }
 
   // for globals
-  for (auto x : nps->getGlobalsMod()) {
-    GlobalValue *gv = x.first;
+  for (const auto x : nps->getGlobalsMod()) {
+    const GlobalValue *gv = x.first;
     MemoryObject *mo = globalObjects.at(gv);
     const ObjectState *os = newState->addressSpace.findObject(mo);
     ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
@@ -4856,10 +4857,16 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
 // apply an error path summary to current state and generate a new error path
 // summary for this function.
-void Executor::applyErrorPathSummaryToAState(ExecutionState &es, ErrorPathSummary *nps) {
-  return;
+void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
+                                             ExprReplaceVisitor2 &replaceMap,
+                                             ErrorPathSummary *nps) {
+  // construct a state
+  ExecutionState *newState = new ExecutionState(es);
+  for (auto pre : nps->getPreCond()) {
+    addConstraint(*newState, replaceMap.visit(pre));
+  }
+  terminateStateOnError(*newState, "apply error path summary", nps->getTerminateReason());
 }
-
 
 ///
 

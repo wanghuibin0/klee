@@ -13,7 +13,9 @@ public:
 
 private:
   ExecutionState *createInitialState(llvm::Function *f);
+  void initializeGlobals(ExecutionState &state);
   void makeArgsSymbolic(ExecutionState *state);
+  void makeGlobalsSymbolic(ExecutionState *state);
 
   // remove state from queue and delete
   virtual void terminateState(ExecutionState &state) override;
@@ -32,7 +34,7 @@ private:
 private:
   llvm::Function *func;
   Summary *summary;
-  std::vector<llvm::GlobalValue*> globalsMod;
+  std::vector<const llvm::GlobalValue*> globalsMod;
 };
 
 } // namespace klee

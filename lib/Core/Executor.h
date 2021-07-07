@@ -332,7 +332,7 @@ protected:
                    std::vector<ref<Expr>> &arguments);
 
   // apply the summary found to current state, may generate multitude state.
-  void applySummary(ExecutionState &state, Summary *s);
+  void applySummary(ExecutionState &state, std::vector<ref<Expr>> &arguments, Summary *s);
 
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
@@ -559,12 +559,14 @@ public:
   // apply summary to a state, may generate new states, delete states, set
   // flags to executor.
   void applySummaryToAState(ExecutionState &es,
-                            std::map<llvm::Value *, ref<Expr>> &args,
+                            std::vector<ref<Expr>> &args,
                             Summary &sum);
   ExecutionState *applyNormalPathSummaryToAState(ExecutionState &es,
                                                  ExprReplaceVisitor2 &replaceMap,
                                                  NormalPathSummary *nps);
-  void applyErrorPathSummaryToAState(ExecutionState &es, ErrorPathSummary *eps);
+  void applyErrorPathSummaryToAState(ExecutionState &es,
+                                     ExprReplaceVisitor2 &replaceMap,
+                                     ErrorPathSummary *eps);
 };
 
 // summary and executor depends on each other, so we put them together.
@@ -573,7 +575,7 @@ class NormalPathSummary {
   ConstraintSet preCond;
   bool isVoidRet;
   ref<Expr> retVal;
-  std::map<llvm::GlobalValue*, ref<Expr>> globalsMod;
+  std::map<const llvm::GlobalValue*, ref<Expr>> globalsMod;
 
 public:
   NormalPathSummary() = default;
@@ -583,14 +585,14 @@ public:
     assert(isVoidRet == false);
     retVal = ret;
   }
-  void addGlobalsModified(llvm::GlobalValue *gv, ref<Expr> val) {
+  void addGlobalsModified(const llvm::GlobalValue *gv, ref<Expr> val) {
     globalsMod.insert(std::make_pair(gv, val));
   }
 
   const ConstraintSet &getPreCond() const { return preCond; }
   bool getIsVoidRet() const { return isVoidRet; }
   ref<Expr> getRetVal() const { return retVal; }
-  const std::map<llvm::GlobalValue*, ref<Expr>> &getGlobalsMod() const { return globalsMod; }
+  const std::map<const llvm::GlobalValue*, ref<Expr>> &getGlobalsMod() const { return globalsMod; }
 };
 
 class ErrorPathSummary {
@@ -605,7 +607,8 @@ public:
 class Summary {
   llvm::Function *function;
   ref<Expr> context;
-  std::map<llvm::Value*, ref<Expr>> args;
+  // std::map<llvm::Value*, ref<Expr>> args;
+  std::vector<ref<Expr>> args;
   std::map<llvm::GlobalValue*, ref<Expr>> globals;
   std::vector<NormalPathSummary *> normalPathSummaries;
   std::vector<ErrorPathSummary *> errorPathSummaries;
@@ -622,11 +625,13 @@ public:
     }
     context = OrExpr::create(context, aContext);
   }
-  void addArg(llvm::Value *farg, ref<Expr> arg) { args.insert(std::make_pair(farg, arg)); }
+  void addArg(llvm::Value *farg, ref<Expr> arg) {
+    args.push_back(arg);
+  }
 
   llvm::Function *getFunction() const { return function; }
   ref<Expr> getContext() const { return context; }
-  const std::map<llvm::Value*, ref<Expr>> &getFormalArgs() const { return args; }
+  const std::vector<ref<Expr>> &getFormalArgs() const { return args; }
   const std::vector<NormalPathSummary*> &getNormalPathSummaries() const { return normalPathSummaries; }
   const std::vector<ErrorPathSummary*> &getErrorPathSummaries() const { return errorPathSummaries; }
   const std::map<llvm::GlobalValue*, ref<Expr>> &getFormalGlobals() const { return globals; }

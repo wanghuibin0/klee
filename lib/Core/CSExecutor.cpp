@@ -6,6 +6,7 @@
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 
 using namespace klee;
 using namespace llvm;
@@ -49,6 +50,30 @@ ExecutionState *BUCSExecutor::createInitialState(Function *f) {
   initializeGlobals(*state);
   makeArgsSymbolic(state);
   return state;
+}
+
+void BUCSExecutor::initializeGlobals(ExecutionState &state) {
+  allocateGlobalObjects(state);
+  initializeGlobalAliases();
+  makeGlobalsSymbolic(&state);
+}
+
+void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
+  const Module *m = kmodule->module.get();
+
+  for (const GlobalVariable &v : m->globals()) {
+    MemoryObject *mo = globalObjects.find(&v)->second;
+
+    if (v.isConstant()) {
+      assert(v.hasInitializer());
+      ObjectState *os = bindObjectInState(*state, mo, false);
+      initializeGlobalObject(*state, os, v.getInitializer(), 0);
+    } else {
+      std::string name = std::string("global_") + v.getName().data();
+      executeMakeSymbolic(*state, mo, name);
+      globalsMod.push_back(&v);
+    }
+  }
 }
 
 void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
@@ -146,7 +171,7 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
   }
 
   // TODO: globals should be collected beforehand
-  for (const auto g : globalsMod) {
+  for (const GlobalValue *g : globalsMod) {
     llvm::Type *ty = g->getType();
     assert(isa<llvm::PointerType>(ty) &&
            "found a global that is not pointer type");
@@ -170,6 +195,13 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
                                          enum TerminateReason termReason,
                                          const char *suffix,
                                          const llvm::Twine &info) {
+  // construct an error path summary
+  ErrorPathSummary *eps = new ErrorPathSummary(state.constraints, termReason);
+
+  // since the error path will be terminated immediately, we do not handle
+  // globals for simplicity.
+
+  summary->addErrorPathSummary(eps);
 
   terminateState(state);
 
