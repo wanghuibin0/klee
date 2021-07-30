@@ -20,6 +20,8 @@
 #include "klee/Solver/Solver.h"
 #include "klee/System/Time.h"
 
+#include "llvm/IR/BasicBlock.h"
+
 #include <map>
 #include <memory>
 #include <set>
@@ -44,6 +46,8 @@ struct StackFrame {
 
   std::vector<const MemoryObject *> allocas;
   Cell *locals;
+
+  std::map <const llvm::BasicBlock *, unsigned> loopCnter;
 
   /// Minimum distance to an uncovered instruction once the function
   /// returns. This is not a good place for this but is used to
@@ -145,6 +149,7 @@ struct CleanupPhaseUnwindingInformation : public UnwindingInformation {
 /// @brief ExecutionState representing a path under exploration
 class ExecutionState {
   friend class Executor;
+  friend  inline void swap(ExecutionState &a, ExecutionState &b);
 #ifdef KLEE_UNITTEST
 public:
 #else
@@ -273,6 +278,33 @@ struct ExecutionStateIDCompare {
     return a->getID() < b->getID();
   }
 };
+
+inline void swap(ExecutionState &a, ExecutionState &b) {
+  using std::swap;
+  swap(a.pc, b.pc);
+  swap(a.prevPC, b.prevPC);
+  swap(a.stack, b.stack);
+  swap(a.incomingBBIndex, b.incomingBBIndex);
+  swap(a.depth, b.depth);
+  swap(a.addressSpace, b.addressSpace);
+  swap(a.constraints, b.constraints);
+  swap(a.queryMetaData, b.queryMetaData);
+  swap(a.pathOS, b.pathOS);
+  swap(a.symPathOS, b.symPathOS);
+  swap(a.coveredLines, b.coveredLines);
+  swap(a.ptreeNode, b.ptreeNode);
+  swap(a.symbolics, b.symbolics);
+  swap(a.arrayNames, b.arrayNames);
+  swap(a.openMergeStack, b.openMergeStack);
+  swap(a.steppedInstructions, b.steppedInstructions);
+  swap(a.instsSinceCovNew, b.instsSinceCovNew);
+  swap(a.unwindingInformation, b.unwindingInformation);
+  // do not exchange state id
+  // swap(a.id, b.id);
+  swap(a.coveredNew, b.coveredNew);
+  swap(a.forkDisabled, b.forkDisabled);
+}
+
 }
 
 #endif /* KLEE_EXECUTIONSTATE_H */

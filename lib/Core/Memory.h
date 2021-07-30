@@ -164,6 +164,20 @@ public:
 
     return 0;
   }
+
+  void dump() {
+    llvm::errs() << "id: " << id << "\n";
+    llvm::errs() << "address: " << address << "\n";
+
+    llvm::errs() << "size: " << size << "\n";
+    llvm::errs() << "name: " << name << "\n";
+
+    llvm::errs() << "isLocal: " << isLocal << "\n";
+    llvm::errs() << "isGlobal: " << isGlobal << "\n";
+    llvm::errs() << "isFixed: " << isFixed << "\n";
+
+    llvm::errs() << "isUserSpecified: " << isUserSpecified << "\n";
+  }
 };
 
 class ObjectState {

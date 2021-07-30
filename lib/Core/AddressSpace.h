@@ -36,6 +36,7 @@ namespace klee {
       MemoryMap;
 
   class AddressSpace {
+    friend void swap(AddressSpace &a, AddressSpace &b);
   private:
     /// Epoch counter used to control ownership of objects.
     mutable unsigned cowKey;
@@ -146,7 +147,17 @@ namespace klee {
     /// @return
     bool copyInConcrete(const MemoryObject *mo, const ObjectState *os,
                         uint64_t src_address);
+    void dump() const {
+      for (auto x : objects) {
+        x.second->print();
+      }
+    }
   };
+  inline void swap(AddressSpace &a, AddressSpace &b) {
+    using std::swap;
+    swap(a.cowKey, b.cowKey);
+    swap(a.objects, b.objects);
+  }
 } // End klee namespace
 
 #endif /* KLEE_ADDRESSSPACE_H */

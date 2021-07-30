@@ -529,6 +529,8 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
   preservedFunctions.push_back("memmove");
 
   kmodule->optimiseAndPrepare(opts, preservedFunctions);
+  // added by wanghb: compute LoopInfo, serve CSE
+  kmodule->computeLoopInfo();
   kmodule->checkModule();
 
   // 4.) Manifest the module
@@ -754,6 +756,9 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
     globalAddresses.emplace(&v, mo->getBaseExpr());
+    llvm::errs() << "in Executor::allocateGlobalObjects, allocating a new memoryobject \n";
+    mo->dump();
+    llvm::errs() << "the coresponding variable is :" << v.getName() << "\n";
   }
 }
 
@@ -891,7 +896,7 @@ void Executor::branch(ExecutionState &state,
       ExecutionState *ns = es->branch();
       addedStates.push_back(ns);
       result.push_back(ns);
-      processTree->attach(es->ptreeNode, ns, es);
+      if (processTree) processTree->attach(es->ptreeNode, ns, es);
     }
   }
 
@@ -1134,7 +1139,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
       }
     }
 
-    processTree->attach(current.ptreeNode, falseState, trueState);
+    if (processTree) processTree->attach(current.ptreeNode, falseState, trueState);
 
     if (pathWriter) {
       // Need to update the pathOS.id field of falseState, otherwise the same id
@@ -1203,6 +1208,44 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
                                  ConstantExpr::alloc(1, Expr::Bool));
 }
 
+bool Executor::addConstraintMayFail(ExecutionState &state, ref<Expr> condition) {
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(condition)) {
+    if (!CE->isTrue()) {
+      return false;
+    }
+    return true;
+  }
+
+  // Check to see if this constraint violates seeds.
+  std::map<ExecutionState *, std::vector<SeedInfo>>::iterator it =
+      seedMap.find(&state);
+  if (it != seedMap.end()) {
+    bool warn = false;
+    for (std::vector<SeedInfo>::iterator siit = it->second.begin(),
+                                         siie = it->second.end();
+         siit != siie; ++siit) {
+      bool res;
+      bool success = solver->mustBeFalse(state.constraints,
+                                         siit->assignment.evaluate(condition),
+                                         res, state.queryMetaData);
+      assert(success && "FIXME: Unhandled solver failure");
+      (void)success;
+      if (res) {
+        siit->patchSeed(state, condition, solver.get());
+        warn = true;
+      }
+    }
+    if (warn)
+      klee_warning("seeds patched for violating constraint");
+  }
+
+  state.addConstraint(condition);
+  if (ivcEnabled)
+    doImpliedValueConcretization(state, condition,
+                                 ConstantExpr::alloc(1, Expr::Bool));
+  return true;
+}
+
 void Executor::addConstraint(ExecutionState &state, const ConstraintSet &conditions) {
   for (auto x : conditions) {
     addConstraint(state, x);
@@ -1217,13 +1260,19 @@ const Cell &Executor::eval(KInstruction *ki, unsigned index,
   assert(vnumber != -1 &&
          "Invalid operand to eval(), not a value or constant!");
 
+  llvm::errs() << "evaluating the operand of instruction:\n";
+  llvm::errs() << "index: " << index << "\n";
+  llvm::errs() << "vnumber: " << vnumber << "\n";
+
   // Determine if this is a constant or not.
   if (vnumber < 0) {
     unsigned index = -vnumber - 2;
+    llvm::errs() << "is a constant, index: " << index << "\n";
     return kmodule->constantTable[index];
   } else {
     unsigned index = vnumber;
     StackFrame &sf = state.stack.back();
+    llvm::errs() << "is a local, index: " << index << "\n";
     return sf.locals[index];
   }
 }
@@ -1651,7 +1700,7 @@ ref<klee::ConstantExpr> Executor::getEhTypeidFor(ref<Expr> type_info) {
 bool Executor::executeCallCompositionally(ExecutionState &state,
                                           KInstruction *ki, Function *f,
                                           std::vector<ref<Expr>> &arguments) {
-  llvm::outs() << "compositional execution for function " << f->getName()
+  llvm::errs() << "compositional execution for function " << f->getName()
                << "\n";
 
   SummaryManager *sm = summaryManager;
@@ -1659,10 +1708,10 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
   if (summary && checkCompatible(state, *summary)) {
     // should prepare actual arguments before application.
     applySummary(state, arguments, summary);
-    llvm::outs() << "success: compositional execution for function "
+    llvm::errs() << "success: compositional execution for function "
                  << f->getName() << "\n";
   } else {
-    llvm::outs() << "cannot get valid summary, fallback to normal SE\n";
+    llvm::errs() << "cannot get valid summary, fallback to normal SE\n";
   }
   return true;
 }
@@ -1673,9 +1722,6 @@ void Executor::applySummary(ExecutionState &state, std::vector<ref<Expr>> &argum
 
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            std::vector<ref<Expr>> &arguments) {
-  if (InterpreterToUse != NOCSE &&
-      executeCallCompositionally(state, ki, f, arguments))
-    return;
   Instruction *i = ki->inst;
   if (isa_and_nonnull<DbgInfoIntrinsic>(i))
     return;
@@ -1798,6 +1844,10 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       }
     }
   } else {
+    if (InterpreterToUse != NOCSE &&
+        executeCallCompositionally(state, ki, f, arguments))
+      return;
+
     // Check if maximum stack size was reached.
     // We currently only count the number of stack frames
     if (RuntimeMaxStackFrames && state.stack.size() > RuntimeMaxStackFrames) {
@@ -3321,7 +3371,7 @@ void Executor::updateStates(ExecutionState *current) {
         seedMap.find(es);
     if (it3 != seedMap.end())
       seedMap.erase(it3);
-    processTree->remove(es->ptreeNode);
+    if (processTree) processTree->remove(es->ptreeNode);
     delete es;
   }
   removedStates.clear();
@@ -3545,6 +3595,8 @@ void Executor::run(ExecutionState &initialState) {
   // main interpreter loop
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
+    // llvm::errs() << "select this state:";
+    // llvm::errs() << &state << "\n";
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
@@ -3555,7 +3607,16 @@ void Executor::run(ExecutionState &initialState) {
     if (::dumpPTree)
       dumpPTree();
 
+    // llvm::errs() << "add " << addedStates.size() << " states.\n";
+    // for (auto x : addedStates) {
+    //   llvm::errs() << x << "\n";
+    // }
+    // llvm::errs() << "remove " << removedStates.size() << " states.\n";
+    // for (auto x : removedStates) {
+    //   llvm::errs() << x << "\n";
+    // }
     updateStates(&state);
+    // llvm::errs() << "after updateStates, remaining " << states.size() << " states.\n";
 
     if (!checkMemoryUsage()) {
       // update searchers when states were terminated early due to memory
@@ -3641,9 +3702,15 @@ void Executor::terminateState(ExecutionState &state) {
     if (it3 != seedMap.end())
       seedMap.erase(it3);
     addedStates.erase(it);
-    processTree->remove(state.ptreeNode);
+    if (processTree) processTree->remove(state.ptreeNode);
     delete &state;
   }
+  // for BUCSE testing, dump path condition and address space of this path.
+  llvm::errs() << "At the end of this path, dumping....................\n";
+  llvm::errs() << "path condition....................\n";
+  state.constraints.dump();
+  llvm::errs() << "address space....................\n";
+  state.addressSpace.dump();
 }
 
 void Executor::terminateStateEarly(ExecutionState &state,
@@ -4132,6 +4199,9 @@ void Executor::executeMemoryOperation(
                               : getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
+  llvm::errs() << "execute memory operation, dump the address\n";
+  address->dump();
+
   if (SimplifySymIndices) {
     if (!isa<ConstantExpr>(address))
       address = ConstraintManager::simplifyExpr(state.constraints, address);
@@ -4417,6 +4487,7 @@ void Executor::runFunctionAsMain(Function *f, int argc, char **argv,
   initializeGlobals(*state);
 
   processTree = std::make_unique<PTree>(state);
+  processTree = nullptr;
   run(*state);
   processTree = nullptr;
 
@@ -4675,7 +4746,7 @@ void Executor::dumpPTree() {
   snprintf(name, sizeof(name), "ptree%08d.dot", (int)stats::instructions);
   auto os = interpreterHandler->openOutputFile(name);
   if (os) {
-    processTree->dump(*os);
+    if (processTree) processTree->dump(*os);
   }
 
   ::dumpPTree = 0;
@@ -4774,6 +4845,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
   // we assume that there is no var args.
   assert(formalArgs.size() == actualArgs.size());
   for (unsigned i = 0; i < actualArgs.size(); ++i) {
+    llvm::errs() << "actual arg " << i << ":\n";
+    actualArgs[i]->dump();
     replaceMap.insert(std::make_pair(formalArgs[i], actualArgs[i]));
   }
 
@@ -4807,7 +4880,16 @@ void Executor::applySummaryToAState(ExecutionState &es,
 
   for (auto nps : normalPathSummaries) {
     ExecutionState *newState = applyNormalPathSummaryToAState(es, erv, nps);
-    addedStates.push_back(newState);
+    if (newState) addedStates.push_back(newState);
+    if (newState) {
+      llvm::errs() << "generating a new state: " << newState << "\n";
+      newState->constraints.dump();
+      llvm::errs() << "ID is: " << newState->getID() << "\n";
+      llvm::errs() << "ret Result = \n";
+      getDestCell(*newState, newState->prevPC).value->dump();
+    } else {
+      llvm::errs() << "not generate a state\n";
+    }
   }
 
   for (auto eps : errorPathSummaries) {
@@ -4816,7 +4898,43 @@ void Executor::applySummaryToAState(ExecutionState &es,
     applyErrorPathSummaryToAState(es, erv, eps);
   }
   // delete the original state
-  removedStates.push_back(&es);
+  // removedStates.push_back(&es);
+  // reuse the original state
+  if (addedStates.empty()) {
+    removedStates.push_back(&es);
+  } else {
+    llvm::errs() << "adding states, we use current state to replace the last states in addedStates\n";
+    ExecutionState *toReplaceState = addedStates.back();
+
+    llvm::errs() << "toReplaceState = " << toReplaceState << "\n";
+    toReplaceState->constraints.dump();
+    llvm::errs() << "ID is: " << toReplaceState->getID() << "\n";
+    llvm::errs() << "ret Result = \n";
+    getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump();
+    llvm::errs() << "current state = " << &es << "\n";
+    es.constraints.dump();
+    llvm::errs() << "ID is: " << es.getID() << "\n";
+    llvm::errs() << "ret Result = \n";
+    // getDestCell(es, es.prevPC).value->dump();
+
+    swap(es, *toReplaceState);
+
+    llvm::errs() << "checking after swap: \n";
+    llvm::errs() << "toReplaceState = " << toReplaceState << "\n";
+    toReplaceState->constraints.dump();
+    llvm::errs() << "ID is: " << toReplaceState->getID() << "\n";
+    llvm::errs() << "ret Result = \n";
+    // getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump();
+    llvm::errs() << "current state = " << &es << "\n";
+    es.constraints.dump();
+    llvm::errs() << "ID is: " << es.getID() << "\n";
+    llvm::errs() << "ret Result = \n";
+    getDestCell(es, es.prevPC).value->dump();
+
+    delete toReplaceState;
+    addedStates.pop_back();
+  }
+
 }
 
 // apply a path summary to current state and generate a new state.
@@ -4827,10 +4945,19 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   // construct a new state
   ExecutionState *newState = new ExecutionState(es);
 
+  llvm::errs() << "applying a normal path summary to a state\n";
+  nps->dump();
+
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
   for (auto pre : nps->getPreCond()) {
-    addConstraint(*newState, replaceMap.visit(pre));
+    bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
+    if (success == false) {
+      delete newState;
+      return nullptr;
+    }
+    llvm::errs() << "the new state's path constraint is:\n";
+    newState->constraints.dump();
   }
 
   // for ret result
@@ -4838,6 +4965,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
     auto retVal = replaceMap.visit(nps->getRetVal());
     // TODO: bind it with the Instruction pointed by prevPc.
     bindLocal(newState->prevPC, *newState, retVal);
+    llvm::errs() << "the ret val of new state is:\n";
+    retVal->dump();
   }
 
   // for globals
@@ -4848,6 +4977,10 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
     ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
 
     ref<Expr> updatedG = replaceMap.visit(x.second);
+
+    llvm::errs() << "for this new state, the following globals are modified:\n";
+    llvm::errs() << gv->getName() << ": ";
+    updatedG->dump();
 
     wos->write(0, updatedG);
   }

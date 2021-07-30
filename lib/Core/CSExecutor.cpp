@@ -12,12 +12,17 @@ using namespace klee;
 using namespace llvm;
 
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
-    : Executor(proto), func(f), summary(new Summary(f)) {}
+    : Executor(proto), func(f), summary(new Summary(f)) {
+  summary->setContext(ConstantExpr::create(1, Expr::Bool));
+}
 
 void BUCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
-  processTree = std::make_unique<PTree>(es);
+  // bindModuleConstants should be called after initializeGlobals
+  bindModuleConstants();
+
+  // processTree = std::make_unique<PTree>(es);
 
   states.insert(es);
 
@@ -32,12 +37,13 @@ void BUCSExecutor::run() {
 
     executeInstruction(state, ki);
     updateStates(&state);
+    llvm::errs() << "after this round, remaining " << states.size() << " states.\n";
   }
 
   delete searcher;
   searcher = nullptr;
 
-  processTree = nullptr;
+  // processTree = nullptr;
 
   return;
   // the computed summary has been stored in summaryLib path by path online,
@@ -56,6 +62,8 @@ void BUCSExecutor::initializeGlobals(ExecutionState &state) {
   allocateGlobalObjects(state);
   initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
+  llvm::errs() << "after initialize globals, dump the address space\n";
+  state.addressSpace.dump();
 }
 
 void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
@@ -72,6 +80,9 @@ void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       std::string name = std::string("global_") + v.getName().data();
       executeMakeSymbolic(*state, mo, name);
       globalsMod.push_back(&v);
+      llvm::errs() << "make a global variable symbolic: " << name << "\n";
+      llvm::errs() << "the memory object is: \n";
+      mo->dump();
     }
   }
 }
@@ -86,7 +97,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
     Expr::Width w = 0;
 
     if (isa<llvm::PointerType>(argTy)) {
-      llvm::outs()
+      llvm::errs()
           << "in BUCSExecutor::makeArgsSymbolic: function arg is a pointer\n";
       w = Context::get().getPointerWidth();
     } else {
@@ -110,12 +121,15 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
+      llvm::errs() << "this arg" << name << "is a pointer, allocate some memory for its pointee\n";
     } else {
-      llvm::outs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic "
+      llvm::errs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic "
                       "array with size "
                    << w << "\n";
+      std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
+      llvm::errs() << "the arg name is " << name << "\n";
       const Array *array = arrayCache.CreateArray(
-          "arg_" + func->getName().str() + "_" + llvm::utostr(i),
+          name,
           Expr::getMinBytesForWidth(w));
       res = Expr::createTempRead(array, w);
     }
@@ -137,7 +151,7 @@ void BUCSExecutor::terminateState(ExecutionState &state) {
   } else {
     // never reached searcher, just delete immediately
     addedStates.erase(it);
-    processTree->remove(state.ptreeNode);
+    // processTree->remove(state.ptreeNode);
     delete &state;
   }
 }
@@ -195,6 +209,7 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
                                          enum TerminateReason termReason,
                                          const char *suffix,
                                          const llvm::Twine &info) {
+  llvm::errs() << "terminate this state because error: " << TerminateReasonNames[termReason] << "\n";
   // construct an error path summary
   ErrorPathSummary *eps = new ErrorPathSummary(state.constraints, termReason);
 

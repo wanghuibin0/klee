@@ -52,6 +52,9 @@
 #include "llvm/Transforms/Utils.h"
 #endif
 
+#include "llvm/Transforms/Utils/LoopSimplify.h"
+#include "llvm/Transforms/Utils/LCSSA.h"
+
 #include <sstream>
 
 using namespace llvm;
@@ -359,6 +362,19 @@ void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
       delimiter = ", ";
     }
     llvm::errs() << "]\n";
+  }
+}
+
+void KModule::computeLoopInfo() {
+  FunctionAnalysisManager FAM(true);
+  FunctionPassManager LoopCanonicalizationFPM(true);
+  LoopCanonicalizationFPM.addPass(LoopSimplifyPass());
+  LoopCanonicalizationFPM.addPass(LCSSAPass());
+
+  for (auto &F : *module) {
+    LoopCanonicalizationFPM.run(F, FAM);
+    LoopInfo &li = FAM.getResult<LoopAnalysis>(F);
+    loopInfos.insert(std::make_pair(&F, std::make_unique<LoopInfo>(std::move(li))));
   }
 }
 

@@ -40,6 +40,12 @@ public:
     return constraints == b.constraints;
   }
 
+  void dump() const {
+    for (auto x : constraints) {
+      x->dump();
+    }
+  }
+
 private:
   constraints_ty constraints;
 };

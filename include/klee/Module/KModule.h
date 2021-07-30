@@ -14,6 +14,7 @@
 #include "klee/Core/Interpreter.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Analysis/LoopInfo.h"
 
 #include <map>
 #include <memory>
@@ -85,6 +86,8 @@ namespace klee {
     std::unique_ptr<llvm::Module> module;
     std::unique_ptr<llvm::DataLayout> targetData;
 
+    std::map<llvm::Function *, std::unique_ptr<llvm::LoopInfo>> loopInfos;
+
     // Our shadow versions of LLVM structures.
     std::vector<std::unique_ptr<KFunction>> functions;
     std::map<llvm::Function*, KFunction*> functionMap;
@@ -147,6 +150,9 @@ namespace klee {
     /// Run passes that check if module is valid LLVM IR and if invariants
     /// expected by KLEE's Executor hold.
     void checkModule();
+
+    /// compute LoopInfo for each function and fill them into loopInfos
+    void computeLoopInfo();
   };
 } // End klee namespace
 
