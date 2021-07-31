@@ -378,6 +378,14 @@ void KModule::computeLoopInfo() {
   }
 }
 
+unsigned KModule::getLoopDepth(KInstruction *ki) {
+  Instruction *inst = ki->inst;
+  BasicBlock *bb = inst->getParent();
+  Function *f = bb->getParent();
+  LoopInfo *li = loopInfos[f].get();
+  return li->getLoopDepth(bb);
+}
+
 void KModule::checkModule() {
   InstructionOperandTypeCheckPass *operandTypeCheckPass =
       new InstructionOperandTypeCheckPass();

@@ -153,6 +153,7 @@ namespace klee {
 
     /// compute LoopInfo for each function and fill them into loopInfos
     void computeLoopInfo();
+    unsigned getLoopDepth(KInstruction *ki);
   };
 } // End klee namespace
 

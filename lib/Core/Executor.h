@@ -569,6 +569,13 @@ public:
   void applyErrorPathSummaryToAState(ExecutionState &es,
                                      ExprReplaceVisitor2 &replaceMap,
                                      ErrorPathSummary *eps);
+
+  bool isEnteringLoop(ExecutionState &es) {
+    return kmodule->getLoopDepth(es.pc) > kmodule->getLoopDepth(es.prevPC);
+  }
+  bool isExitingLoop(ExecutionState &es) {
+    return kmodule->getLoopDepth(es.pc) < kmodule->getLoopDepth(es.prevPC);
+  }
 };
 
 // summary and executor depends on each other, so we put them together.
