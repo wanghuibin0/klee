@@ -570,11 +570,15 @@ public:
                                      ExprReplaceVisitor2 &replaceMap,
                                      ErrorPathSummary *eps);
 
-  bool isEnteringLoop(ExecutionState &es) {
-    return kmodule->getLoopDepth(es.pc) > kmodule->getLoopDepth(es.prevPC);
+  std::pair<bool, llvm::Loop*> isEnteringLoop(ExecutionState &es) {
+    llvm::Loop *loop = kmodule->getLoop(es.pc);
+    llvm::Loop *loopPrev = kmodule->getLoop(es.prevPC);
   }
-  bool isExitingLoop(ExecutionState &es) {
-    return kmodule->getLoopDepth(es.pc) < kmodule->getLoopDepth(es.prevPC);
+  llvm::Loop *isExitingLoop(ExecutionState &es) {
+    if (kmodule->getLoopDepth(es.pc) < kmodule->getLoopDepth(es.prevPC)) {
+      return kmodule->getLoop(es.pc);
+    }
+    return nullptr;
   }
 };
 

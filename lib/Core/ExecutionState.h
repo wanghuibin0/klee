@@ -21,6 +21,7 @@
 #include "klee/System/Time.h"
 
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/Analysis/LoopInfo.h"
 
 #include <map>
 #include <memory>
@@ -261,6 +262,10 @@ public:
 
   void pushFrame(KInstIterator caller, KFunction *kf);
   void popFrame();
+
+  void enterLoop(llvm::Loop *loop);
+  void exitLoop(llvm::Loop *loop);
+  void reenterLoop(llvm::Loop *loop);
 
   void addSymbolic(const MemoryObject *mo, const Array *array);
 

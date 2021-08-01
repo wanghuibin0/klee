@@ -16,6 +16,28 @@ BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
   summary->setContext(ConstantExpr::create(1, Expr::Bool));
 }
 
+void BUCSExecutor::checkAndUpdateLoopCnter(ExecutionState &es) {
+  Loop *loop = kmodule->getLoop(es.pc);
+  Loop *loopPrev = kmodule->getLoop(es.prevPC);
+  unsigned depth = loop ? loop->getLoopDepth() : 0;
+  unsigned depthPrev = loopPrev ? loopPrev->getLoopDepth() : 0;
+
+  if (depth > depthPrev) { // entering loop
+    es.enterLoop(loop);
+  } else if (depth < depthPrev) { // exiting loop
+    es.exitLoop(loopPrev);
+  } else {
+    assert(loop == loopPrev && "must be in same loop");
+    BasicBlock *header = loop->getHeader();
+    BasicBlock *latch = loop->getLoopLatch();
+    BasicBlock *bb = es.pc->inst->getParent();
+    BasicBlock *bbPrev = es.prevPC->inst->getParent();
+    if (bb == header && bbPrev == latch) {  // reentering loop
+      es.reenterLoop(loop);
+    }
+  }
+}
+
 void BUCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
@@ -32,6 +54,7 @@ void BUCSExecutor::run() {
 
   while (!states.empty()) {
     ExecutionState &state = searcher->selectState();
+    checkAndUpdateLoopCnter(state); // only update loop counter, not terminate the state
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
