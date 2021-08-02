@@ -21,7 +21,6 @@
 #include "klee/System/Time.h"
 
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/Analysis/LoopInfo.h"
 
 #include <map>
 #include <memory>
@@ -48,7 +47,7 @@ struct StackFrame {
   std::vector<const MemoryObject *> allocas;
   Cell *locals;
 
-  std::map <const llvm::BasicBlock *, unsigned> loopCnter;
+  std::map<KInstruction*, unsigned> instCnterMap;
 
   /// Minimum distance to an uncovered instruction once the function
   /// returns. This is not a good place for this but is used to
@@ -262,10 +261,6 @@ public:
 
   void pushFrame(KInstIterator caller, KFunction *kf);
   void popFrame();
-
-  void enterLoop(llvm::Loop *loop);
-  void exitLoop(llvm::Loop *loop);
-  void reenterLoop(llvm::Loop *loop);
 
   void addSymbolic(const MemoryObject *mo, const Array *array);
 

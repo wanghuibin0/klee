@@ -365,33 +365,6 @@ void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
   }
 }
 
-void KModule::computeLoopInfo() {
-  FunctionAnalysisManager FAM(true);
-  FunctionPassManager LoopCanonicalizationFPM(true);
-  LoopCanonicalizationFPM.addPass(LoopSimplifyPass());
-  LoopCanonicalizationFPM.addPass(LCSSAPass());
-
-  for (auto &F : *module) {
-    LoopCanonicalizationFPM.run(F, FAM);
-    LoopInfo &li = FAM.getResult<LoopAnalysis>(F);
-    loopInfos.insert(std::make_pair(&F, std::make_unique<LoopInfo>(std::move(li))));
-  }
-}
-
-unsigned KModule::getLoopDepth(KInstruction *ki) {
-  llvm::Loop *loop = getLoop(ki);
-  return loop->getLoopDepth();
-}
-
-llvm::Loop *KModule::getLoop(KInstruction *ki) {
-  Instruction *inst = ki->inst;
-  BasicBlock *bb = inst->getParent();
-  Function *f = bb->getParent();
-  LoopInfo *li = loopInfos[f].get();
-  return li->getLoopFor(bb);
-}
-
-
 void KModule::checkModule() {
   InstructionOperandTypeCheckPass *operandTypeCheckPass =
       new InstructionOperandTypeCheckPass();

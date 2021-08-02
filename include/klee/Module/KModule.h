@@ -150,11 +150,6 @@ namespace klee {
     /// Run passes that check if module is valid LLVM IR and if invariants
     /// expected by KLEE's Executor hold.
     void checkModule();
-
-    /// compute LoopInfo for each function and fill them into loopInfos
-    void computeLoopInfo();
-    unsigned getLoopDepth(KInstruction *ki);
-    llvm::Loop *getLoop(KInstruction *ki);
   };
 } // End klee namespace
 

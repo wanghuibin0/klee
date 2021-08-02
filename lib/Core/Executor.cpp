@@ -302,6 +302,12 @@ cl::opt<unsigned>
                        "states when additional 100MB allocated (default=2000)"),
               cl::init(2000), cl::cat(TerminationCat));
 
+cl::opt<unsigned>
+    MaxLoopUnroll("max-loopunroll",
+              cl::desc("Refuse to fork when above this amount of "
+                       "loop unroll times"),
+              cl::init(5), cl::cat(TerminationCat));
+
 cl::opt<bool> MaxMemoryInhibit("max-memory-inhibit",
                                cl::desc("Inhibit forking when above memory cap "
                                         "(see -max-memory) (default=true)"),
@@ -530,7 +536,6 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 
   kmodule->optimiseAndPrepare(opts, preservedFunctions);
   // added by wanghb: compute LoopInfo, serve CSE
-  kmodule->computeLoopInfo();
   kmodule->checkModule();
 
   // 4.) Manifest the module
@@ -1429,6 +1434,20 @@ void Executor::printDebugInstructions(ExecutionState &state) {
 }
 
 void Executor::stepInstruction(ExecutionState &state) {
+  KInstruction *ki = state.pc;
+  unsigned &instCnter = state.stack.back().instCnterMap[ki];
+  ++instCnter;
+
+  Instruction *inst = ki->inst;
+  errs() << "this instruction: " << *inst << "\n";
+  errs() << "counter is: " << instCnter << "\n";
+
+  if (instCnter >= MaxLoopUnroll) {
+    errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
+    errs() << "reach max loop unroll\n";
+    terminateState(state);
+  }
+
   printDebugInstructions(state);
   if (statsTracker)
     statsTracker->stepInstruction(state);
@@ -4946,7 +4965,7 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   ExecutionState *newState = new ExecutionState(es);
 
   llvm::errs() << "applying a normal path summary to a state\n";
-  nps->dump();
+//  nps->dump();
 
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
@@ -4956,8 +4975,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
       delete newState;
       return nullptr;
     }
-    llvm::errs() << "the new state's path constraint is:\n";
-    newState->constraints.dump();
+//    llvm::errs() << "the new state's path constraint is:\n";
+//    newState->constraints.dump();
   }
 
   // for ret result
@@ -4965,8 +4984,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
     auto retVal = replaceMap.visit(nps->getRetVal());
     // TODO: bind it with the Instruction pointed by prevPc.
     bindLocal(newState->prevPC, *newState, retVal);
-    llvm::errs() << "the ret val of new state is:\n";
-    retVal->dump();
+//    llvm::errs() << "the ret val of new state is:\n";
+//    retVal->dump();
   }
 
   // for globals
@@ -4978,9 +4997,9 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
     ref<Expr> updatedG = replaceMap.visit(x.second);
 
-    llvm::errs() << "for this new state, the following globals are modified:\n";
-    llvm::errs() << gv->getName() << ": ";
-    updatedG->dump();
+//     llvm::errs() << "for this new state, the following globals are modified:\n";
+//     llvm::errs() << gv->getName() << ": ";
+//     updatedG->dump();
 
     wos->write(0, updatedG);
   }

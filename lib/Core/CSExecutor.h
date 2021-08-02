@@ -10,7 +10,6 @@ public:
   BUCSExecutor(const Executor &proto, llvm::Function *f);
   void run();
   Summary *extractSummary();
-  void checkAndUpdateLoopCnter(ExecutionState &es);
 
 private:
   ExecutionState *createInitialState(llvm::Function *f);
