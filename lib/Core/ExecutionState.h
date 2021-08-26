@@ -266,6 +266,8 @@ public:
 
   void addConstraint(ref<Expr> e);
 
+  void dumpConstraint();
+
   bool merge(const ExecutionState &b);
   void dumpStack(llvm::raw_ostream &out) const;
 

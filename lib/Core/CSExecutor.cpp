@@ -1,15 +1,32 @@
 #include "CSExecutor.h"
 #include "MemoryManager.h"
 #include "Searcher.h"
+#include "StatsTracker.h"
+#include "CoreStats.h"
 
 #include "klee/Core/SummaryManager.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/CommandLine.h"
 
 using namespace klee;
 using namespace llvm;
+
+namespace klee {
+extern cl::OptionCategory TerminationCat;
+}
+
+
+namespace {
+cl::opt<unsigned>
+    MaxLoopUnroll("max-loopunroll",
+              cl::desc("Refuse to fork when above this amount of "
+                       "loop unroll times"),
+              cl::init(5), cl::cat(TerminationCat));
+}
+
 
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
     : Executor(proto), func(f), summary(new Summary(f)) {
@@ -30,12 +47,14 @@ void BUCSExecutor::run() {
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
-  while (!states.empty()) {
+  while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
+    llvm::errs() << "new round, current state is " << &state << "\n";
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
+    timers.invoke();
     updateStates(&state);
     llvm::errs() << "after this round, remaining " << states.size() << " states.\n";
   }
@@ -79,10 +98,11 @@ void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
     } else {
       std::string name = std::string("global_") + v.getName().data();
       executeMakeSymbolic(*state, mo, name);
+      mo->setName(name);
       globalsMod.push_back(&v);
-//       llvm::errs() << "make a global variable symbolic: " << name << "\n";
-//       llvm::errs() << "the memory object is: \n";
-//       mo->dump();
+      llvm::errs() << "make a global variable symbolic: " << name << "\n";
+      llvm::errs() << "the memory object is: \n";
+      mo->dump();
     }
   }
 }
@@ -121,7 +141,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
-      llvm::errs() << "this arg" << name << "is a pointer, allocate some memory for its pointee\n";
+      llvm::errs() << "this arg " << name << " is a pointer, allocate some memory for its pointee\n";
     } else {
       llvm::errs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic "
                       "array with size "
@@ -196,8 +216,11 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
     MemoryObject *mo = globalObjects[g];
     const ObjectState *os = state.addressSpace.findObject(mo);
     ref<Expr> gVal = os->read(0, w);
+    llvm::errs() << "adding a modified global: ";
+    gVal->dump();
     ps->addGlobalsModified(g, gVal);
   }
+
 
   summary->addNormalPathSummary(ps);
 
@@ -222,4 +245,29 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
 
   if (shouldExitOn(termReason))
     haltExecution = true;
+}
+
+void BUCSExecutor::stepInstruction(ExecutionState &state) {
+  KInstruction *ki = state.pc;
+  unsigned &instCnter = state.stack.back().instCnterMap[ki];
+  ++instCnter;
+
+  Instruction *inst = ki->inst;
+  errs() << "this instruction: " << *inst << "\n";
+  errs() << "counter is: " << instCnter << "\n";
+
+  if (instCnter >= MaxLoopUnroll) {
+    errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
+    errs() << "reach max loop unroll\n";
+    terminateState(state);
+  }
+
+  printDebugInstructions(state);
+  if (statsTracker)
+    statsTracker->stepInstruction(state);
+
+  ++stats::instructions;
+  ++state.steppedInstructions;
+  state.prevPC = state.pc;
+  ++state.pc;
 }

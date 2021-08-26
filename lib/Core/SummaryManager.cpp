@@ -28,7 +28,7 @@ cl::opt<InterpreterType> InterpreterToUse(
 
 SummaryManager *SummaryManager::createSummaryManager(const Executor &mainExecutor) {
   if (InterpreterToUse == BUCSE) {
-    llvm::outs() << "creating bucse summary manager.\n";
+    llvm::errs() << "creating bucse summary manager.\n";
     return new BUCSESummaryManager(mainExecutor);
   } else {
     return nullptr;
@@ -36,15 +36,15 @@ SummaryManager *SummaryManager::createSummaryManager(const Executor &mainExecuto
 }
 
 Summary *BUCSESummaryManager::getSummary(ExecutionState &es, llvm::Function *f) {
-  llvm::outs() << "getting summary for function " << f->getName() << "\n";
+  llvm::errs() << "getting summary for function " << f->getName() << "\n";
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
-    llvm::outs() << "summary does not exist, try to compute.\n";
+    llvm::errs() << "summary does not exist, try to compute.\n";
     Summary *sum = computeSummary(f);
     summaryLib.insert(std::make_pair(f, sum));
     return sum;
   } else {
-    llvm::outs() << "summary exists, reusing.\n";
+    llvm::errs() << "summary exists, reusing.\n";
     return summaryLib[f];
   }
 }
@@ -61,6 +61,9 @@ Summary *BUCSESummaryManager::computeSummary(llvm::Function *f) {
 }
 
 BUCSExecutor *BUCSESummaryManager::createBUCSExecutor(llvm::Function *f) {
-  llvm::outs() << "creating a bucse executor\n";
-  return new BUCSExecutor(proto, f);
+  llvm::errs() << "creating a bucse executor\n";
+  auto e = new BUCSExecutor(proto, f);
+//  llvm::errs() << "proto->summaryManager = " << proto.getSummaryManager() << "\n";
+//  llvm::errs() << "e->summaryManager = " << e->getSummaryManager() << "\n";
+  return e;
 }

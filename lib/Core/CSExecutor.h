@@ -32,6 +32,8 @@ private:
                                      const char *suffix = NULL,
                                      const llvm::Twine &longMessage = "") override;
 
+  virtual void stepInstruction(ExecutionState &state);
+
 private:
   llvm::Function *func;
   Summary *summary;

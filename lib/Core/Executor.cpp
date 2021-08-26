@@ -302,12 +302,6 @@ cl::opt<unsigned>
                        "states when additional 100MB allocated (default=2000)"),
               cl::init(2000), cl::cat(TerminationCat));
 
-cl::opt<unsigned>
-    MaxLoopUnroll("max-loopunroll",
-              cl::desc("Refuse to fork when above this amount of "
-                       "loop unroll times"),
-              cl::init(5), cl::cat(TerminationCat));
-
 cl::opt<bool> MaxMemoryInhibit("max-memory-inhibit",
                                cl::desc("Inhibit forking when above memory cap "
                                         "(see -max-memory) (default=true)"),
@@ -409,6 +403,8 @@ cl::opt<bool> DebugCheckForImpliedValues(
 extern "C" unsigned dumpStates, dumpPTree;
 unsigned dumpStates = 0, dumpPTree = 0;
 
+TimerGroup theTimerGroup{time::Span(TimerInterval)};
+
 const char *Executor::TerminateReasonNames[] = {
     [Abort] = "abort",
     [Assert] = "assert",
@@ -432,7 +428,7 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
     : Interpreter(opts), interpreterHandler(ih), searcher(0), summaryManager(0),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
       pathWriter(0), symPathWriter(0),
-      specialFunctionHandler(0), timers{time::Span(TimerInterval)},
+      specialFunctionHandler(0), timers(theTimerGroup),
       replayKTest(0), replayPath(0), usingSeeds(0), atMemoryLimit(false),
       inhibitForking(false), haltExecution(false), ivcEnabled(false),
       debugLogBuffer(debugBufferString) {
@@ -492,6 +488,21 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
   }
 }
 
+// this copy ctor is only used by CSEInterpreterManager to create prototype
+// Executor.
+Executor::Executor(const Executor &e)
+    : Interpreter(e.interpreterOpts), kmodule(e.kmodule),
+      interpreterHandler(e.interpreterHandler), searcher(0),
+      summaryManager(e.summaryManager),
+      externalDispatcher(e.externalDispatcher), solver(e.solver),
+      memory(new MemoryManager(&arrayCache)), statsTracker(0), pathWriter(0),
+      symPathWriter(0),
+      specialFunctionHandler(e.specialFunctionHandler), timers(e.timers),
+      /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
+      atMemoryLimit(false), inhibitForking(false), haltExecution(false),
+      ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout),
+      debugInstFile(0), debugLogBuffer(debugBufferString) {}
+
 llvm::Module *
 Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
                     const ModuleOptions &opts) {
@@ -535,7 +546,8 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
   preservedFunctions.push_back("memmove");
 
   kmodule->optimiseAndPrepare(opts, preservedFunctions);
-  // added by wanghb: compute LoopInfo, serve CSE
+  // added by wanghb: collect functions suitable for CSE, serve CSE
+  kmodule->collectCseFunctions();
   kmodule->checkModule();
 
   // 4.) Manifest the module
@@ -559,22 +571,6 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 
   return kmodule->module.get();
 }
-
-// this copy ctor is only used by CSEInterpreterManager to create prototype
-// Executor.
-Executor::Executor(const Executor &e)
-    : Interpreter(e.interpreterOpts), kmodule(e.kmodule),
-      interpreterHandler(e.interpreterHandler), searcher(0),
-      summaryManager(e.summaryManager),
-      externalDispatcher(e.externalDispatcher), solver(e.solver),
-      memory(new MemoryManager(&arrayCache)), statsTracker(0), pathWriter(0),
-      symPathWriter(0),
-      specialFunctionHandler(e.specialFunctionHandler), timers{time::Span(
-                                                            TimerInterval)},
-      /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
-      atMemoryLimit(false), inhibitForking(false), haltExecution(false),
-      ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout),
-      debugInstFile(0), debugLogBuffer(debugBufferString) {}
 
 Executor::~Executor() {
   delete memory;
@@ -761,9 +757,9 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
     globalAddresses.emplace(&v, mo->getBaseExpr());
-    llvm::errs() << "in Executor::allocateGlobalObjects, allocating a new memoryobject \n";
-    mo->dump();
-    llvm::errs() << "the coresponding variable is :" << v.getName() << "\n";
+    //llvm::errs() << "in Executor::allocateGlobalObjects, allocating a new memoryobject \n";
+    //mo->dump();
+    //llvm::errs() << "the coresponding variable is :" << v.getName() << "\n";
   }
 }
 
@@ -1214,6 +1210,8 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
 }
 
 bool Executor::addConstraintMayFail(ExecutionState &state, ref<Expr> condition) {
+  llvm::errs() << "Executor::addConstraintMayFail: ";
+  condition->dump();
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(condition)) {
     if (!CE->isTrue()) {
       return false;
@@ -1265,19 +1263,13 @@ const Cell &Executor::eval(KInstruction *ki, unsigned index,
   assert(vnumber != -1 &&
          "Invalid operand to eval(), not a value or constant!");
 
-  llvm::errs() << "evaluating the operand of instruction:\n";
-  llvm::errs() << "index: " << index << "\n";
-  llvm::errs() << "vnumber: " << vnumber << "\n";
-
   // Determine if this is a constant or not.
   if (vnumber < 0) {
     unsigned index = -vnumber - 2;
-    llvm::errs() << "is a constant, index: " << index << "\n";
     return kmodule->constantTable[index];
   } else {
     unsigned index = vnumber;
     StackFrame &sf = state.stack.back();
-    llvm::errs() << "is a local, index: " << index << "\n";
     return sf.locals[index];
   }
 }
@@ -1434,20 +1426,6 @@ void Executor::printDebugInstructions(ExecutionState &state) {
 }
 
 void Executor::stepInstruction(ExecutionState &state) {
-  KInstruction *ki = state.pc;
-  unsigned &instCnter = state.stack.back().instCnterMap[ki];
-  ++instCnter;
-
-  Instruction *inst = ki->inst;
-  errs() << "this instruction: " << *inst << "\n";
-  errs() << "counter is: " << instCnter << "\n";
-
-  if (instCnter >= MaxLoopUnroll) {
-    errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
-    errs() << "reach max loop unroll\n";
-    terminateState(state);
-  }
-
   printDebugInstructions(state);
   if (statsTracker)
     statsTracker->stepInstruction(state);
@@ -1863,9 +1841,12 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       }
     }
   } else {
-    if (InterpreterToUse != NOCSE &&
-        executeCallCompositionally(state, ki, f, arguments))
-      return;
+    llvm::errs() << "executing funciton calls\n";
+    llvm::errs() << f->getName() << "\n";
+    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f)) {
+      if (executeCallCompositionally(state, ki, f, arguments))
+        return;
+    }
 
     // Check if maximum stack size was reached.
     // We currently only count the number of stack frames
@@ -3626,14 +3607,19 @@ void Executor::run(ExecutionState &initialState) {
     if (::dumpPTree)
       dumpPTree();
 
-    // llvm::errs() << "add " << addedStates.size() << " states.\n";
-    // for (auto x : addedStates) {
-    //   llvm::errs() << x << "\n";
-    // }
-    // llvm::errs() << "remove " << removedStates.size() << " states.\n";
-    // for (auto x : removedStates) {
-    //   llvm::errs() << x << "\n";
-    // }
+    llvm::errs() << "in Executor, before update states\n";
+    for (auto s : states) {
+      llvm::errs() << "state: " << s << "\n";
+    }
+
+    llvm::errs() << "add " << addedStates.size() << " states.\n";
+    for (auto x : addedStates) {
+      llvm::errs() << x << "\n";
+    }
+    llvm::errs() << "remove " << removedStates.size() << " states.\n";
+    for (auto x : removedStates) {
+      llvm::errs() << x << "\n";
+    }
     updateStates(&state);
     // llvm::errs() << "after updateStates, remaining " << states.size() << " states.\n";
 
@@ -3725,11 +3711,11 @@ void Executor::terminateState(ExecutionState &state) {
     delete &state;
   }
   // for BUCSE testing, dump path condition and address space of this path.
-  llvm::errs() << "At the end of this path, dumping....................\n";
-  llvm::errs() << "path condition....................\n";
-  state.constraints.dump();
-  llvm::errs() << "address space....................\n";
-  state.addressSpace.dump();
+  // llvm::errs() << "At the end of this path, dumping....................\n";
+  // llvm::errs() << "path condition....................\n";
+  // state.constraints.dump();
+  // llvm::errs() << "address space....................\n";
+  // state.addressSpace.dump();
 }
 
 void Executor::terminateStateEarly(ExecutionState &state,
@@ -4218,8 +4204,8 @@ void Executor::executeMemoryOperation(
                               : getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
-  llvm::errs() << "execute memory operation, dump the address\n";
-  address->dump();
+//  llvm::errs() << "execute memory operation, dump the address\n";
+//  address->dump();
 
   if (SimplifySymIndices) {
     if (!isa<ConstantExpr>(address))
@@ -4855,6 +4841,8 @@ bool Executor::checkCompatible(ExecutionState &es, Summary &sum) {
 void Executor::applySummaryToAState(ExecutionState &es,
                                     std::vector<ref<Expr>> &args,
                                     Summary &sum) {
+  llvm::errs() << "in Executor::applySummaryToAState\n";
+  sum.dump();
   // construct the substitution map: formalArg -> actualArg
   // do it here because it is convenient to access formalArg from sum.
   const auto &formalArgs = sum.getFormalArgs();
@@ -4889,6 +4877,13 @@ void Executor::applySummaryToAState(ExecutionState &es,
     replaceMap.insert(std::make_pair(formalG, actualG));
   }
 
+  // dump the replace map
+  llvm::errs() << "in Executor::applySummaryToAState: dumpping the replace map:\n";
+  for (auto x : replaceMap) {
+    llvm::errs() << "key0: "; x.first->dump();
+    llvm::errs() << "val0: "; x.second->dump();
+  }
+
   // do the actual substitution
   ExprReplaceVisitor2 erv(replaceMap);
 
@@ -4897,6 +4892,10 @@ void Executor::applySummaryToAState(ExecutionState &es,
   const std::vector<ErrorPathSummary *> &errorPathSummaries =
       sum.getErrorPathSummaries();
 
+  llvm::errs() << "applying a normal summary, it belongs to "
+               << sum.getFunction()->getName() << "\n";
+
+  bool isVoidRet = sum.getFunction()->getReturnType()->isVoidTy();
   for (auto nps : normalPathSummaries) {
     ExecutionState *newState = applyNormalPathSummaryToAState(es, erv, nps);
     if (newState) addedStates.push_back(newState);
@@ -4905,7 +4904,9 @@ void Executor::applySummaryToAState(ExecutionState &es,
       newState->constraints.dump();
       llvm::errs() << "ID is: " << newState->getID() << "\n";
       llvm::errs() << "ret Result = \n";
-      getDestCell(*newState, newState->prevPC).value->dump();
+      if (!isVoidRet) {
+        getDestCell(*newState, newState->prevPC).value->dump();
+      }
     } else {
       llvm::errs() << "not generate a state\n";
     }
@@ -4929,7 +4930,9 @@ void Executor::applySummaryToAState(ExecutionState &es,
     toReplaceState->constraints.dump();
     llvm::errs() << "ID is: " << toReplaceState->getID() << "\n";
     llvm::errs() << "ret Result = \n";
-    getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump();
+    if (!isVoidRet) {
+      getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump();
+    }
     llvm::errs() << "current state = " << &es << "\n";
     es.constraints.dump();
     llvm::errs() << "ID is: " << es.getID() << "\n";
@@ -4948,7 +4951,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
     es.constraints.dump();
     llvm::errs() << "ID is: " << es.getID() << "\n";
     llvm::errs() << "ret Result = \n";
-    getDestCell(es, es.prevPC).value->dump();
+    if (!isVoidRet)
+      getDestCell(es, es.prevPC).value->dump();
 
     delete toReplaceState;
     addedStates.pop_back();
@@ -4967,9 +4971,13 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   llvm::errs() << "applying a normal path summary to a state\n";
 //  nps->dump();
 
+  llvm::errs() << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n";
+  es.dumpConstraint();
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
   for (auto pre : nps->getPreCond()) {
+    llvm::errs() << "in Executor::applyNormalPathSummaryToAState: ";
+    pre->dump();
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (success == false) {
       delete newState;
@@ -5014,6 +5022,7 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
                                              ErrorPathSummary *nps) {
   // construct a state
   ExecutionState *newState = new ExecutionState(es);
+  addedStates.push_back(newState);
   for (auto pre : nps->getPreCond()) {
     addConstraint(*newState, replaceMap.visit(pre));
   }

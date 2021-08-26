@@ -86,7 +86,8 @@ namespace klee {
     std::unique_ptr<llvm::Module> module;
     std::unique_ptr<llvm::DataLayout> targetData;
 
-    std::map<llvm::Function *, std::unique_ptr<llvm::LoopInfo>> loopInfos;
+    // std::map<llvm::Function *, std::unique_ptr<llvm::LoopInfo>> loopInfos;
+    std::set<llvm::Function *> cseSuitableFunctions;
 
     // Our shadow versions of LLVM structures.
     std::vector<std::unique_ptr<KFunction>> functions;
@@ -150,6 +151,13 @@ namespace klee {
     /// Run passes that check if module is valid LLVM IR and if invariants
     /// expected by KLEE's Executor hold.
     void checkModule();
+
+    bool isSuitableForCSE(llvm::Function *f) {
+      return cseSuitableFunctions.find(f) != cseSuitableFunctions.end();
+    }
+
+    void collectCseFunctions();
+    bool checkCseSuitable(llvm::Function &F);
   };
 } // End klee namespace
 

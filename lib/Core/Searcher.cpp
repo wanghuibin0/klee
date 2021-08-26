@@ -46,6 +46,21 @@ ExecutionState &DFSSearcher::selectState() {
 void DFSSearcher::update(ExecutionState *current,
                          const std::vector<ExecutionState *> &addedStates,
                          const std::vector<ExecutionState *> &removedStates) {
+  llvm::errs() << "in DFSSearcher, before update, having the following states \n";
+  for (auto s : states) {
+    llvm::errs() << "state: " << s << "\n";
+  }
+
+  llvm::errs() << "in DFSSearcher, adding states: \n";
+  for (auto s : addedStates) {
+    llvm::errs() << "adding state: " << s << "\n";
+  }
+
+  llvm::errs() << "in DFSSearcher, removing states: \n";
+  for (auto s : removedStates) {
+    llvm::errs() << "removing state: " << s << "\n";
+  }
+
   // insert states
   states.insert(states.end(), addedStates.begin(), addedStates.end());
 
@@ -486,7 +501,7 @@ void IterativeDeepeningTimeSearcher::update(ExecutionState *current,
         pausedStates.erase(it);
         alt.erase(std::remove(alt.begin(), alt.end(), state), alt.end());
       }
-    }    
+    }
     baseSearcher->update(current, addedStates, alt);
   } else {
     baseSearcher->update(current, addedStates, removedStates);

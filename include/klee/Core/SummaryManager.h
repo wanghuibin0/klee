@@ -31,7 +31,9 @@ public:
 class BUCSESummaryManager : public SummaryManager {
 public:
   // ctors
-  BUCSESummaryManager(const Executor &mainExecutor) : proto(mainExecutor) {}
+  BUCSESummaryManager(const Executor &mainExecutor) : proto(mainExecutor) {
+    proto.setSummaryManager(this);
+  }
 
   Summary *getSummary(ExecutionState &es, llvm::Function *f);
 
@@ -41,7 +43,7 @@ private:
 
 private:
   std::map<llvm::Function *, Summary *> summaryLib;
-  const Executor proto;
+  Executor proto;
 };
 
 // class SummaryManager {

@@ -99,6 +99,9 @@ class Executor : public Interpreter {
   friend class MergeHandler;
   friend klee::Searcher *klee::constructUserSearcher(Executor &executor);
 
+  friend class NormalPathSummary;
+  friend class ErrorPathSummary;
+
 public:
   typedef std::pair<ExecutionState *, ExecutionState *> StatePair;
 
@@ -142,7 +145,7 @@ protected:
   TreeStreamWriter *pathWriter, *symPathWriter;
   // SpecialFunctionHandler *specialFunctionHandler;
   std::shared_ptr<SpecialFunctionHandler> specialFunctionHandler;
-  TimerGroup timers;
+  TimerGroup &timers;
   std::unique_ptr<PTree> processTree;
 
   /// Used to track states that have been added during the current
@@ -258,7 +261,7 @@ protected:
   void initializeGlobalAliases();
   void initializeGlobalObjects(ExecutionState &state);
 
-  void stepInstruction(ExecutionState &state);
+  virtual void stepInstruction(ExecutionState &state);
   void updateStates(ExecutionState *current);
   void transferToBasicBlock(llvm::BasicBlock *dst, llvm::BasicBlock *src,
                             ExecutionState &state);
@@ -492,6 +495,10 @@ public:
     summaryManager = sm;
   }
 
+  SummaryManager *getSummaryManager() const {
+    return summaryManager;
+  }
+
   void setPathWriter(TreeStreamWriter *tsw) override { pathWriter = tsw; }
 
   void setSymbolicPathWriter(TreeStreamWriter *tsw) override {
@@ -597,18 +604,19 @@ public:
   const std::map<const llvm::GlobalValue*, ref<Expr>> &getGlobalsMod() const { return globalsMod; }
 
   void dump() const {
-    llvm::outs() << "pre conditions are:\n";
+    llvm::errs() << "this is a normal path summary\n";
+    llvm::errs() << "pre conditions are:\n";
     for (auto x : preCond) {
       x->dump();
     }
-    llvm::outs() << "is void return? " << isVoidRet << "\n";
+    llvm::errs() << "is void return? " << isVoidRet << "\n";
     if (!isVoidRet) {
-      llvm::outs() << "retVal = ";
+      llvm::errs() << "retVal = ";
       retVal->dump();
     }
-    llvm::outs() << "globals modified:\n";
+    llvm::errs() << "globals modified:\n";
     for (auto x :  globalsMod) {
-      llvm::outs() << x.first->getName() << ": ";
+      llvm::errs() << x.first->getName() << ": ";
       x.second->dump();
     }
   }
@@ -621,6 +629,14 @@ public:
   ErrorPathSummary(ConstraintSet &preCond, enum Executor::TerminateReason tr) : preCond(preCond), tr(tr) {}
   const ConstraintSet &getPreCond() const { return preCond; }
   enum Executor::TerminateReason getTerminateReason() const { return tr; }
+  void dump() {
+    llvm::errs() << "this is an error path summary\n";
+    llvm::errs() << "pre conditions are:\n";
+    for (auto x : preCond) {
+      x->dump();
+    }
+    llvm::errs() << "terminate reason is: " << Executor::TerminateReasonNames[tr] << "\n";
+  }
 };
 
 class Summary {
@@ -657,6 +673,31 @@ public:
   const std::vector<NormalPathSummary*> &getNormalPathSummaries() const { return normalPathSummaries; }
   const std::vector<ErrorPathSummary*> &getErrorPathSummaries() const { return errorPathSummaries; }
   const std::map<llvm::GlobalValue*, ref<Expr>> &getFormalGlobals() const { return globals; }
+
+  void dump() {
+    llvm::errs() << "function name: " << function->getName() << "\n";
+    llvm::errs() << "context is: ";
+    context->dump();
+    llvm::errs() << "arguments are: \n";
+    for (auto a : args) {
+      a->dump();
+      llvm::errs() << "; ";
+    }
+    llvm::errs() << "globals: \n";
+    for (auto g : globals) {
+      llvm::errs() << "key: " << g.first->getName() << "\n";
+      llvm::errs() << "val: ";
+      g.second->dump();
+      llvm::errs() << "; ";
+    }
+
+    for (auto nps : normalPathSummaries) {
+      nps->dump();
+    }
+    for (auto eps : errorPathSummaries) {
+      eps->dump();
+    }
+  }
 };
 
 } // namespace klee

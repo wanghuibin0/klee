@@ -401,6 +401,36 @@ unsigned KModule::getConstantID(Constant *c, KInstruction* ki) {
   return id;
 }
 
+void KModule::collectCseFunctions() {
+  for (llvm::Function &F : *module) {
+    if (checkCseSuitable(F)) {
+      cseSuitableFunctions.insert(&F);
+    }
+  }
+
+  llvm::errs() << "the following functions will be cseed:\n";
+  for (auto f : cseSuitableFunctions) {
+    llvm::errs() << f->getName() << ", ";
+  }
+  llvm::errs() << "\n";
+}
+
+bool KModule::checkCseSuitable(llvm::Function &F) {
+  auto *retTy = F.getReturnType();
+  if (retTy->isPointerTy())
+    return false;
+
+  if (F.isVarArg())
+    return false;
+
+  for (auto it = F.arg_begin(); it != F.arg_end(); ++it) {
+    auto argTy = it->getType();
+    if (argTy->isPointerTy())
+      return false;
+  }
+  return true;
+}
+
 /***/
 
 KConstant::KConstant(llvm::Constant* _ct, unsigned _id, KInstruction* _ki) {
