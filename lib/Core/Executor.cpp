@@ -1719,6 +1719,11 @@ void Executor::applySummary(ExecutionState &state, std::vector<ref<Expr>> &argum
 
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            std::vector<ref<Expr>> &arguments) {
+  static bool isCSEBegin = false;
+  if (f->getName() == "__klee_posix_wrapped_main") {
+    isCSEBegin = true;
+  }
+
   Instruction *i = ki->inst;
   if (isa_and_nonnull<DbgInfoIntrinsic>(i))
     return;
@@ -1843,7 +1848,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
   } else {
     llvm::errs() << "executing funciton calls\n";
     llvm::errs() << f->getName() << "\n";
-    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f)) {
+    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f) && isCSEBegin) {
       if (executeCallCompositionally(state, ki, f, arguments))
         return;
     }
