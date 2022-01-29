@@ -32,3 +32,5 @@ autoconf/autom4te.cache/
 autom4te.cache/
 
 .vscode/
+examples/
+tags

@@ -413,9 +413,14 @@ void KModule::collectCseFunctions() {
     llvm::errs() << f->getName() << ", ";
   }
   llvm::errs() << "\n";
+  exit(0);
 }
 
 bool KModule::checkCseSuitable(llvm::Function &F) {
+  if (F.isIntrinsic())
+    return false;
+  if (F.getName() == "main")
+    return false;
   auto *retTy = F.getReturnType();
   if (retTy->isPointerTy())
     return false;
