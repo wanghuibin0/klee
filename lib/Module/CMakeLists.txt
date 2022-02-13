@@ -7,6 +7,7 @@
 #
 #===------------------------------------------------------------------------===#
 set(KLEE_MODULE_COMPONENT_SRCS
+  IntervalInfo.cpp
   Checks.cpp
   FunctionAlias.cpp
   InstructionInfoTable.cpp
