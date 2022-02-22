@@ -68,7 +68,7 @@ private:
       llvm::Value *p = i->getPointerOperand();
       if (auto *c = llvm::dyn_cast<llvm::ConstantInt>(v)) {
         auto value = c->getSExtValue();
-        ref<Interval> i(new Interval(value, value));
+        Interval i(value, value);
         internalEnv.set(p, i);
       } else {
         assert(internalEnv.hasValue(v));
@@ -98,38 +98,38 @@ private:
     llvm::ConstantInt *c2 = llvm::dyn_cast<llvm::ConstantInt>(op2);
 
     auto opcode = binst->getOpcode();
-    ref<Interval> i;
+    Interval i;
     if (c1 && c2) {
       auto v1 = c1->getSExtValue();
       auto v2 = c2->getSExtValue();
-      i = apply(opcode, new Interval(v1, v1), new Interval(v2, v2));
+      i = apply(opcode, Interval(v1, v1), Interval(v2, v2));
     } else if (c1 && !c2) {
       auto v1 = c1->getSExtValue();
-      i = apply(opcode, new Interval(v1, v1), internalEnv.lookup(op2)->deref());
+      i = apply(opcode, Interval(v1, v1), internalEnv.lookup(op2));
     } else if (!c1 && c2) {
       auto v2 = c2->getSExtValue();
-      i = apply(opcode, internalEnv.lookup(op1)->deref(), new Interval(v2, v2));
+      i = apply(opcode, internalEnv.lookup(op1), Interval(v2, v2));
     } else {
-      i = apply(opcode, internalEnv.lookup(op1)->deref(), internalEnv.lookup(op2)->deref());
+      i = apply(opcode, internalEnv.lookup(op1), internalEnv.lookup(op2));
     }
     internalEnv.set(binst, i);
   }
 
   /// apply add/sub/mul/div directly on two intervals
-  ref<Interval> apply(unsigned opcode, ref<Interval> i1, ref<Interval> i2) {
-    ref<Interval> ret;
+  Interval apply(unsigned opcode, Interval i1, Interval i2) {
+    Interval ret;
     switch (opcode) {
     case llvm::Instruction::Add:
-      ret = ref<Interval>(new Interval(*i1 + *i2));
+      ret = i1 + i2;
       break;
     case llvm::Instruction::Sub:
-      ret = ref<Interval>(new Interval(*i1 - *i2));
+      ret = i1 - i2;
       break;
     case llvm::Instruction::Mul:
-      ret = ref<Interval>(new Interval(*i1 * *i2));
+      ret = i1 * i2;
       break;
     case llvm::Instruction::SDiv:
-      ret = ref<Interval>(new Interval(*i1 / *i2));
+      ret = i1 / i2;
       break;
     }
     return ret;
@@ -191,32 +191,32 @@ private:
                       llvm::BasicBlock *bbf) {
     auto value2 = c2->getSExtValue();
 
-    ref<Interval> ipredicateT;
-    ref<Interval> ipredicateF;
+    Interval ipredicateT;
+    Interval ipredicateF;
     switch (p) {
     case llvm::CmpInst::Predicate::ICMP_SLT:
-      ipredicateT = new Interval(MIN, value2 - 1);
-      ipredicateF = new Interval(value2, MAX);
+      ipredicateT = Interval(MIN, value2 - 1);
+      ipredicateF = Interval(value2, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_SLE:
-      ipredicateT = new Interval(MIN, value2);
-      ipredicateF = new Interval(value2 + 1, MAX);
+      ipredicateT = Interval(MIN, value2);
+      ipredicateF = Interval(value2 + 1, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGT:
-      ipredicateT = new Interval(value2 + 1, MAX);
-      ipredicateF = new Interval(MIN, value2);
+      ipredicateT = Interval(value2 + 1, MAX);
+      ipredicateF = Interval(MIN, value2);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGE:
-      ipredicateT = new Interval(value2, MAX);
-      ipredicateF = new Interval(MIN, value2 - 1);
+      ipredicateT = Interval(value2, MAX);
+      ipredicateF = Interval(MIN, value2 - 1);
       break;
     case llvm::CmpInst::Predicate::ICMP_EQ:
-      ipredicateT = new Interval(value2, value2);
-      ipredicateF = new Interval(MIN, MAX);
+      ipredicateT = Interval(value2, value2);
+      ipredicateF = Interval(MIN, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_NE:
-      ipredicateT = new Interval(MIN, MAX);
-      ipredicateF = new Interval(value2, value2);
+      ipredicateT = Interval(MIN, MAX);
+      ipredicateF = Interval(value2, value2);
       break;
     default:
       assert(0 && "only cares about int comparison");
@@ -225,10 +225,10 @@ private:
 
     // merge the original interval of op1 and set its interval for the successive bbs.
     assert(internalEnv.hasValue(op1));
-    ref<Interval> i1 = cast<Interval>(internalEnv.lookup(op1)->deref());
+    Interval i1 = internalEnv.lookup(op1);
 
-    gEnvMap.getEnv(bb, bbt).set(op1, new Interval(*i1 & *ipredicateT));
-    gEnvMap.getEnv(bb, bbf).set(op1, new Interval(*i1 & *ipredicateF));
+    gEnvMap.getEnv(bb, bbt).set(op1, Interval(i1 & ipredicateT));
+    gEnvMap.getEnv(bb, bbf).set(op1, Interval(i1 & ipredicateF));
   }
 
   // TODO
@@ -236,49 +236,49 @@ private:
                       llvm::Value *op2, llvm::BasicBlock *bbt,
                       llvm::BasicBlock *bbf) {
 
-    auto valueLower = cast<Interval>(internalEnv.lookup(op2)->deref())->getLower();
-    auto valueUpper = cast<Interval>(internalEnv.lookup(op2)->deref())->getUpper();
+    auto valueLower = internalEnv.lookup(op2).getLower();
+    auto valueUpper = internalEnv.lookup(op2).getUpper();
 
-    ref<Interval> ipredicateT;
-    ref<Interval> ipredicateF;
+    Interval ipredicateT;
+    Interval ipredicateF;
     switch (p) {
     case llvm::CmpInst::Predicate::ICMP_SLT:
-      ipredicateT = new Interval(MIN, valueLower - 1);
-      ipredicateF = new Interval(valueUpper, MAX);
+      ipredicateT = Interval(MIN, valueLower - 1);
+      ipredicateF = Interval(valueUpper, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_SLE:
-      ipredicateT = new Interval(MIN, valueLower);
-      ipredicateF = new Interval(valueUpper + 1, MAX);
+      ipredicateT = Interval(MIN, valueLower);
+      ipredicateF = Interval(valueUpper + 1, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGT:
-      ipredicateT = new Interval(valueUpper + 1, MAX);
-      ipredicateF = new Interval(MIN, valueLower);
+      ipredicateT = Interval(valueUpper + 1, MAX);
+      ipredicateF = Interval(MIN, valueLower);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGE:
-      ipredicateT = new Interval(valueUpper, MAX);
-      ipredicateF = new Interval(MIN, valueLower - 1);
+      ipredicateT = Interval(valueUpper, MAX);
+      ipredicateF = Interval(MIN, valueLower - 1);
       break;
     case llvm::CmpInst::Predicate::ICMP_EQ:
-      ipredicateT = new Interval(valueLower, valueUpper);
-      ipredicateF = new Interval(MIN, MAX);
+      ipredicateT = Interval(valueLower, valueUpper);
+      ipredicateF = Interval(MIN, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_NE:
-      ipredicateT = new Interval(MIN, MAX);
-      ipredicateF = new Interval(valueLower, valueUpper);
+      ipredicateT = Interval(MIN, MAX);
+      ipredicateF = Interval(valueLower, valueUpper);
       break;
     default:
       assert(0 && "only cares about int comparison\n");
     }
 
     assert(internalEnv.hasValue(op1));
-    ref<Interval> i1 = cast<Interval>(internalEnv.lookup(op1)->deref());
+    Interval i1 = internalEnv.lookup(op1);
 
-    gEnvMap.getEnv(bb, bbt).set(op1, new Interval(*i1 & *ipredicateT));
-    gEnvMap.getEnv(bb, bbf).set(op1, new Interval(*i1 & *ipredicateF));
+    gEnvMap.getEnv(bb, bbt).set(op1, i1 & ipredicateT);
+    gEnvMap.getEnv(bb, bbf).set(op1, i1 & ipredicateF);
   }
 
   void executeCallInst(llvm::CallInst *cinst) {
-    internalEnv.set(cinst, new Interval(Interval::Top()));
+    internalEnv.set(cinst, Interval::Top());
   }
 };
 } // namespace klee

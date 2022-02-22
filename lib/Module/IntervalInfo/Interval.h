@@ -2,7 +2,6 @@
 #define KLEE_INTERVAL_H
 
 #include "klee/ADT/Ref.h"
-#include "AbstractValue.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <limits>
@@ -13,25 +12,19 @@ using IntTy = int;
 static constexpr IntTy MAX = std::numeric_limits<IntTy>::max() >> 1;
 static constexpr IntTy MIN = std::numeric_limits<IntTy>::min() >> 1;
 
-class Interval : public AbstractValue {
+class Interval {
   IntTy lower;
   IntTy upper;
 
 public:
 public:
-  Interval() : AbstractValue(K_Interval), lower(1), upper(0) {}
+  Interval() : lower(1), upper(0) {}
   Interval(IntTy l, IntTy h)
-      : AbstractValue(K_Interval), lower(std::max(l, MIN)),
+      : lower(std::max(l, MIN)),
         upper(std::min(h, MAX)) {}
   Interval(const Interval &other) = default;
   static Interval Bot() { return Interval(); }
   static Interval Top() { return Interval(MIN, MAX); }
-
-  ref<AbstractValue> deref() { return this; }
-
-  static bool classof(const AbstractValue *av) {
-    return av->getKind() == K_Interval;
-  }
 
   IntTy getLower() const { return lower; }
   IntTy getUpper() const { return upper; }

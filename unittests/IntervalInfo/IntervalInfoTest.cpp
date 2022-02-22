@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 #include "IntervalInfo/Interval.h"
 
+using namespace klee;
+
 TEST(IntervalInfoTest, intervalArith0) {
   Interval a(1, 3);
   Interval b(1, 9);

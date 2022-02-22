@@ -2,7 +2,6 @@
 #define ENV_H
 
 #include "klee/ADT/Ref.h"
-#include "AbstractValue.h"
 #include "Interval.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/raw_ostream.h"
@@ -11,7 +10,7 @@
 
 namespace klee {
   class Env {
-    std::map<llvm::Value*, ref<AbstractValue>> m;
+    std::map<llvm::Value*, Interval> m;
 
   public:
     Env() = default;
@@ -24,12 +23,12 @@ namespace klee {
       return it != m.end();
     }
     /// should be used after hasValue
-    ref<AbstractValue> lookup(llvm::Value* v) const {
+    Interval lookup(llvm::Value* v) const {
       assert(hasValue(v));
       return m.find(v)->second;
     }
 
-    void set(llvm::Value* v, ref<AbstractValue> i) {
+    void set(llvm::Value* v, Interval i) {
       auto it = m.find(v);
       if (it != m.end()) {
         it->second = i;
@@ -46,7 +45,7 @@ namespace klee {
       m.clear();
     }
 
-    using iterator = std::map<llvm::Value*, ref<AbstractValue>>::iterator;
+    using iterator = std::map<llvm::Value*, Interval>::iterator;
     iterator begin() { return m.begin(); }
     iterator end() { return m.end(); }
 
@@ -56,9 +55,9 @@ namespace klee {
         auto *v = it.first;
         auto i = it.second;
         if (newEnv.hasValue(v)) {
-          ref<Interval> lhs = cast<Interval>(newEnv.lookup(v)->deref());
-          ref<Interval> rhs = cast<Interval>(i->deref());
-          ref<Interval> newI(new Interval(*lhs | *rhs));
+          Interval lhs = newEnv.lookup(v);
+          Interval rhs = i;
+          Interval newI(lhs | rhs);
           newEnv.set(v, newI);
         } else {
           newEnv.set(v, i);
@@ -77,9 +76,9 @@ namespace klee {
         for (auto it : m) {
           auto *v = it.first;
           auto i = it.second;
-          ref<Interval> lhs = cast<Interval>(i->deref());
-          ref<Interval> rhs = cast<Interval>(r.lookup(v)->deref());
-          if (!r.hasValue(v) || !(*lhs <= *rhs)) {
+          Interval lhs = i;
+          Interval rhs = r.lookup(v);
+          if (!r.hasValue(v) || !(lhs <= rhs)) {
             return false;
           }
         }
@@ -99,8 +98,8 @@ namespace klee {
       for (auto it : m) {
         os << "Value: ";
         os << *(it.first) << ", ";
-        os << "ref<AbstractValue>: ";
-        os << cast<Interval>(it.second->deref()) << "\n";
+        os << "Interval: ";
+        os << it.second << "\n";
       }
     }
   };

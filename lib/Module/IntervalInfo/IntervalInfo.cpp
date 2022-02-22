@@ -37,7 +37,7 @@ void IntervalInfoPass::initializeEntryInfo(Function &f, BasicBlock &entry) {
       outs() << "this is an integer type\n";
       getGlobalEnvMap()
         .getEnv(nullptr, &entry)
-        .set(&arg, new Interval(Interval::Top()));
+        .set(&arg, Interval::Top());
     }
   }
 }
