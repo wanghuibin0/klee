@@ -48,7 +48,8 @@ private:
     llvm::outs() << "updating env out of bb: " << bb << "\n";
     for (auto &&b : successors(bb)) {
       Env envBr = computeEnvOfBranch(bb, b);
-      // should merge because the branch instruction has generated some env there.
+      // should merge because the branch instruction has generated some env
+      // there.
       gEnvMap.mergeAndUpdate(bb, b, envBr);
       gEnvMap.getEnv(bb, b).dump(llvm::outs());
     }
@@ -80,6 +81,12 @@ private:
       assert(internalEnv.hasValue(p));
       auto v = internalEnv.lookup(p);
       internalEnv.set(inst, v);
+    } else if (llvm::isa<llvm::BitCastInst>(inst)) {
+      llvm::BitCastInst *i = llvm::cast<llvm::BitCastInst>(inst);
+      llvm::Value *src = i->getOperand(0);
+      assert(internalEnv.hasValue(src));
+      Interval iv = internalEnv.lookup(src);
+      internalEnv.set(inst, iv);
     } else if (llvm::isa<llvm::BinaryOperator>(inst)) {
       executeBinaryOp(llvm::cast<llvm::BinaryOperator>(inst));
     } else if (llvm::isa<llvm::CmpInst>(inst)) {
@@ -87,7 +94,7 @@ private:
     } else if (llvm::isa<llvm::CallInst>(inst)) {
       executeCallInst(llvm::cast<llvm::CallInst>(inst));
     } else {
-      llvm::outs() << "other llvm insts, ignoring\n";
+      executeOtherInst(inst);
     }
   }
 
@@ -142,17 +149,28 @@ private:
     llvm::ConstantInt *c2 = llvm::dyn_cast<llvm::ConstantInt>(op2);
 
     llvm::TerminatorInst *ti = bb->getTerminator();
+    if (!llvm::isa<llvm::BranchInst>(ti)) return;
+    if (ti->getNumOperands() != 3) return;
+
     llvm::BasicBlock *bbf = llvm::cast<llvm::BasicBlock>(ti->getOperand(1));
     llvm::BasicBlock *bbt = llvm::cast<llvm::BasicBlock>(ti->getOperand(2));
+
+    std::map<llvm::Value *, llvm::Value *> eqrel;
+    for (auto &&i : *bb) {
+      if (llvm::isa<llvm::LoadInst>(&i)) {
+        llvm::Value *ptr = llvm::cast<llvm::LoadInst>(&i)->getPointerOperand();
+        eqrel.insert(std::make_pair(&i, ptr));
+      }
+    }
 
     llvm::CmpInst::Predicate p = binst->getPredicate();
 
     if (c1 && !c2) {
-      applyCmpValReg(p, c1, op2, bbt, bbf);
+      applyCmpValReg(p, c1, op2, bbt, bbf, eqrel);
     } else if (!c1 && c2) {
-      applyCmpRegVal(p, op1, c2, bbt, bbf);
+      applyCmpRegVal(p, op1, c2, bbt, bbf, eqrel);
     } else if (!c1 && !c2) {
-      applyCmpRegReg(p, op1, op2, bbt, bbf);
+      applyCmpRegReg(p, op1, op2, bbt, bbf, eqrel);
     } else {
       assert(0);
     }
@@ -160,25 +178,32 @@ private:
 
   void applyCmpValReg(llvm::CmpInst::Predicate p, llvm::ConstantInt *c1,
                       llvm::Value *op2, llvm::BasicBlock *bbt,
-                      llvm::BasicBlock *bbf) {
+                      llvm::BasicBlock *bbf,
+                      std::map<llvm::Value *, llvm::Value *> eqrel) {
     switch (p) {
     case llvm::CmpInst::Predicate::ICMP_SLT:
-      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SGT, op2, c1, bbt, bbf);
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SGT, op2, c1, bbt, bbf,
+                     eqrel);
       break;
     case llvm::CmpInst::Predicate::ICMP_SLE:
-      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SGE, op2, c1, bbt, bbf);
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SGE, op2, c1, bbt, bbf,
+                     eqrel);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGT:
-      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SLT, op2, c1, bbt, bbf);
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SLT, op2, c1, bbt, bbf,
+                     eqrel);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGE:
-      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SLE, op2, c1, bbt, bbf);
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SLE, op2, c1, bbt, bbf,
+                     eqrel);
       break;
     case llvm::CmpInst::Predicate::ICMP_EQ:
-      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_EQ, op2, c1, bbt, bbf);
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_EQ, op2, c1, bbt, bbf,
+                     eqrel);
       break;
     case llvm::CmpInst::Predicate::ICMP_NE:
-      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_NE, op2, c1, bbt, bbf);
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_NE, op2, c1, bbt, bbf,
+                     eqrel);
       break;
     default:
       assert(0 && "only handle integer comparison");
@@ -188,7 +213,8 @@ private:
 
   void applyCmpRegVal(llvm::CmpInst::Predicate p, llvm::Value *op1,
                       llvm::ConstantInt *c2, llvm::BasicBlock *bbt,
-                      llvm::BasicBlock *bbf) {
+                      llvm::BasicBlock *bbf,
+                      std::map<llvm::Value *, llvm::Value *> eqrel) {
     auto value2 = c2->getSExtValue();
 
     Interval ipredicateT;
@@ -223,18 +249,20 @@ private:
       break;
     }
 
-    // merge the original interval of op1 and set its interval for the successive bbs.
+    // merge the original interval of op1 and set its interval for the
+    // successive bbs.
     assert(internalEnv.hasValue(op1));
     Interval i1 = internalEnv.lookup(op1);
 
-    gEnvMap.getEnv(bb, bbt).set(op1, Interval(i1 & ipredicateT));
-    gEnvMap.getEnv(bb, bbf).set(op1, Interval(i1 & ipredicateF));
+    gEnvMap.getEnv(bb, bbt).set(eqrel[op1], Interval(i1 & ipredicateT));
+    gEnvMap.getEnv(bb, bbf).set(eqrel[op1], Interval(i1 & ipredicateF));
   }
 
   // TODO
   void applyCmpRegReg(llvm::CmpInst::Predicate p, llvm::Value *op1,
                       llvm::Value *op2, llvm::BasicBlock *bbt,
-                      llvm::BasicBlock *bbf) {
+                      llvm::BasicBlock *bbf,
+                      std::map<llvm::Value *, llvm::Value *> eqrel) {
 
     auto valueLower = internalEnv.lookup(op2).getLower();
     auto valueUpper = internalEnv.lookup(op2).getUpper();
@@ -278,7 +306,19 @@ private:
   }
 
   void executeCallInst(llvm::CallInst *cinst) {
+    llvm::Function *f = cinst->getCalledFunction();
+    llvm::StringRef name = f->getName();
+    if (name == "klee_make_symbolic") {
+      llvm::Value *firstArg = cinst->getArgOperand(0);
+      internalEnv.set(firstArg, Interval::Top());
+    }
+
     internalEnv.set(cinst, Interval::Top());
+  }
+
+  void executeOtherInst(llvm::Instruction *inst) {
+    internalEnv.set(inst, Interval::Top());
+    llvm::outs() << "other llvm insts, ignoring\n";
   }
 };
 } // namespace klee
