@@ -205,19 +205,6 @@ public:
   bool runOnModule(llvm::Module &M) override;
 };
 
-class Env;
-class IntervalInfoPass : public llvm::FunctionPass {
-  std::map<llvm::BasicBlock*, Env>* envIn;
-  std::map<llvm::BasicBlock*, Env>* envOut;
-public:
-  static char ID;
-  IntervalInfoPass();
-  virtual ~IntervalInfoPass();
-  bool runOnFunction(llvm::Function &f) override;
-private:
-  Env joinOutOfPreds(llvm::BasicBlock *bb);
-  Env propagate(llvm::BasicBlock *bb);
-};
 } // namespace klee
 
 #endif /* KLEE_PASSES_H */

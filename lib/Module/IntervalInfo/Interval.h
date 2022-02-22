@@ -1,33 +1,43 @@
 #ifndef KLEE_INTERVAL_H
 #define KLEE_INTERVAL_H
 
-#include <limits>
+#include "klee/ADT/Ref.h"
+#include "AbstractValue.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <limits>
 
-//using namespace std;
+namespace klee {
 
 using IntTy = int;
 static constexpr IntTy MAX = std::numeric_limits<IntTy>::max() >> 1;
 static constexpr IntTy MIN = std::numeric_limits<IntTy>::min() >> 1;
 
-class Interval {
+class Interval : public AbstractValue {
   IntTy lower;
   IntTy upper;
 
 public:
-
 public:
-  Interval(IntTy l, IntTy h) : lower(std::max(l, MIN)), upper(std::min(h, MAX)) {}
+  Interval() : AbstractValue(K_Interval), lower(1), upper(0) {}
+  Interval(IntTy l, IntTy h)
+      : AbstractValue(K_Interval), lower(std::max(l, MIN)),
+        upper(std::min(h, MAX)) {}
   Interval(const Interval &other) = default;
-  static Interval Bot() { return Interval(1, 0); }
-  static Interval Top() {
-    return Interval(MIN, MAX);
+  static Interval Bot() { return Interval(); }
+  static Interval Top() { return Interval(MIN, MAX); }
+
+  ref<AbstractValue> deref() { return this; }
+
+  static bool classof(const AbstractValue *av) {
+    return av->getKind() == K_Interval;
   }
+
+  IntTy getLower() const { return lower; }
+  IntTy getUpper() const { return upper; }
 
   bool isBot() const { return lower > upper; }
-  bool isTop() const {
-    return lower == MIN && upper == MAX;
-  }
+  bool isTop() const { return lower == MIN && upper == MAX; }
 
   Interval &operator=(const Interval &rhs) {
     if (this != &rhs) {
@@ -38,15 +48,12 @@ public:
   }
 
   bool operator==(const Interval &r) const {
-    return (isBot() && r.isBot())
-      || (isTop() && r.isTop())
-      || (lower == r.lower && upper == r.upper);
+    return (isBot() && r.isBot()) || (isTop() && r.isTop()) ||
+           (lower == r.lower && upper == r.upper);
   }
 
   bool operator<=(const Interval &r) const {
-    return isBot()
-      || r.isTop()
-      || (lower >= r.lower && upper <= r.upper);
+    return isBot() || r.isTop() || (lower >= r.lower && upper <= r.upper);
   }
 
   Interval operator+(const Interval &r) {
@@ -55,7 +62,7 @@ public:
     } else if (isTop() || r.isTop()) {
       return Top();
     } else {
-      return Interval(lower+r.lower, upper+r.upper);
+      return Interval(lower + r.lower, upper + r.upper);
     }
   }
 
@@ -65,7 +72,7 @@ public:
     } else if (isTop() || r.isTop()) {
       return Top();
     } else {
-      return Interval(lower-r.upper, upper-r.lower);
+      return Interval(lower - r.upper, upper - r.lower);
     }
   }
 
@@ -90,11 +97,11 @@ public:
     } else if (isTop() || r.isTop()) {
       return Top();
     } else {
-      if (r.lower <= 0 && r.upper >=0) {
+      if (r.lower <= 0 && r.upper >= 0) {
         return Top();
       } else {
-        double x = 1.0/r.upper;
-        double y = 1.0/r.lower;
+        double x = 1.0 / r.upper;
+        double y = 1.0 / r.lower;
         int ll = lower * x;
         int lh = lower * y;
         int hl = upper * x;
@@ -141,7 +148,7 @@ public:
     }
   }
 
-  void dump(std::ostream &os) const {
+  void dump(llvm::raw_ostream &os) const {
     if (isBot()) {
       os << "_|_";
     } else {
@@ -162,9 +169,11 @@ public:
   }
 };
 
-std::ostream &operator<<(std::ostream &os, const Interval &i) {
+llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Interval &i) {
   i.dump(os);
   return os;
 }
+
+} // namespace klee
 
 #endif

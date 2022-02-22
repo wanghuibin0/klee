@@ -7,7 +7,6 @@
 #
 #===------------------------------------------------------------------------===#
 set(KLEE_MODULE_COMPONENT_SRCS
-  IntervalInfo.cpp
   Checks.cpp
   FunctionAlias.cpp
   InstructionInfoTable.cpp
@@ -31,6 +30,8 @@ klee_add_component(kleeModule
   ${KLEE_MODULE_COMPONENT_SRCS}
 )
 
+add_subdirectory(IntervalInfo)
+
 set(LLVM_COMPONENTS
   bitreader
   bitwriter
@@ -43,6 +44,6 @@ set(LLVM_COMPONENTS
 
 klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
 target_link_libraries(kleeModule PUBLIC ${LLVM_LIBS})
-target_link_libraries(kleeModule PRIVATE
-  kleeSupport
+target_link_libraries(kleeModule PUBLIC
+  kleeInterval
 )

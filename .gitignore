@@ -34,3 +34,4 @@ autom4te.cache/
 .vscode/
 examples/
 tags
+.ccls*

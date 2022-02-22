@@ -10,6 +10,7 @@
 #define DEBUG_TYPE "KModule"
 
 #include "Passes.h"
+#include "IntervalInfo/IntervalInfo.h"
 
 #include "klee/Config/Version.h"
 #include "klee/Core/Interpreter.h"
@@ -299,6 +300,7 @@ void KModule::optimiseAndPrepare(
   pm3.add(createScalarizerPass());
   pm3.add(new PhiCleanerPass());
   pm3.add(new FunctionAliasPass());
+  pm3.add(new IntervalInfoPass());
   pm3.run(*module);
 }
 
@@ -413,7 +415,6 @@ void KModule::collectCseFunctions() {
     llvm::errs() << f->getName() << ", ";
   }
   llvm::errs() << "\n";
-  exit(0);
 }
 
 bool KModule::checkCseSuitable(llvm::Function &F) {
