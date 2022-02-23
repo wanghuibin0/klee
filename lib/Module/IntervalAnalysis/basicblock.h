@@ -280,6 +280,9 @@ public:
                                                 // holds
       ipredicateF = Interval(valueLower, valueUpper);
       break;
+    default:
+      assert(0);
+      break;
     }
     Interval newiT = cstEnvT.lookup(eqrel[op1]) & ipredicateT;
     Interval newiF = cstEnvF.lookup(eqrel[op1]) & ipredicateF;
@@ -359,6 +362,9 @@ public:
                                                 // holds
       ipredicateF = Interval(value2, value2);
       break;
+    default:
+      assert(0);
+      break;
     }
     Interval newiT = cstEnvT.lookup(eqrel[op1]) & ipredicateT;
     Interval newiF = cstEnvF.lookup(eqrel[op1]) & ipredicateF;
@@ -376,7 +382,7 @@ public:
   void executeCallInst(Instruction *ins) {
     return; // do nothing for now
     CallInst *ci = (CallInst *)ins;
-    for (int i = 0; i < ci->getNumArgOperands(); i++) {
+    for (unsigned i = 0; i < ci->getNumArgOperands(); i++) {
       Value *v = ci->getArgOperand(i);
       ConstantInt *c = dyn_cast<ConstantInt>(v);
       if (!c && ci->getCalledFunction()->getName() == "printf") {
@@ -402,7 +408,7 @@ public:
   void execute() {
     if (cstEnv.size() > 0) { // what to do if there is a Bot
       for (auto it = cstEnv.begin(); it != cstEnv.end(); it++) {
-        Value *v = it->first;
+        //Value *v = it->first;
         Interval i = it->second;
         if (i.isBottom()) {
           prev.clear(); // remove everything
@@ -422,12 +428,12 @@ public:
     }
 
     BasicBlock::iterator itb = bb->begin();
-    for (itb; itb != bb->end(); itb++) {
-      Instruction *ins = (Instruction *)itb;
+    for (; itb != bb->end(); itb++) {
+      Instruction *ins = (Instruction *)&*itb;
       // outs()<<*ins<<"\n";
       if (isa<StoreInst>(ins)) { // StoreInst
         StoreInst *tmp = (StoreInst *)ins;
-        Type *t = tmp->getValueOperand()->getType();
+        //Type *t = tmp->getValueOperand()->getType();
         Value *v = tmp->getValueOperand();
         Value *ptr = tmp->getPointerOperand();
         if (ConstantInt *c = dyn_cast<ConstantInt>(v)) {
@@ -441,7 +447,7 @@ public:
         Value *v = ((LoadInst *)ins)->getPointerOperand();
         post.set(ins, post.lookup(v));
 
-        /**/ Instruction *insPeek = (Instruction *)(++itb);
+        /**/ Instruction *insPeek = (Instruction *)&*(++itb);
         if (isa<StoreInst>(insPeek)) {
           StoreInst *tmp = (StoreInst *)insPeek;
           Value *ptr = tmp->getPointerOperand();
@@ -454,9 +460,9 @@ public:
 			      else if (isa < BinaryOperator > (ins))
 			      {
 
-        auto itb2 = itb;
-        /**/ Instruction *insPre1 = (Instruction *)(--itb2);
-        Instruction *insPre2 = (Instruction *)(--itb2);
+        // auto itb2 = itb;
+        // Instruction *insPre1 = (Instruction *)&*(--itb2);
+        // Instruction *insPre2 = (Instruction *)&*(--itb2);
         // outs()<<*insPre1<<"\n"<<*insPre2;
         bool isEqual = false;
         // if(isa<LoadInst>(insPre1) && isa<LoadInst>(insPre2)){

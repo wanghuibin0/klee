@@ -20,7 +20,7 @@ public:
       if (c) {
         int64_t value = c->getSExtValue();
         Interval i = Interval(value, value);
-        globalEnv.set(it, i);
+        globalEnv.set(&*it, i);
       }
     }
     for (Module::iterator mi = m.begin(), me = m.end(); mi != me; ++mi) {
@@ -42,12 +42,12 @@ public:
     /*******************split call and return instructions*******************/
     set<Instruction *> splitedIns;
     for (auto it = f.begin(); it != f.end(); it++) {
-      BasicBlock *b = (BasicBlock *)it;
+      BasicBlock *b = (BasicBlock *)&*it;
       for (auto i = b->begin(); i != b->end(); i++) {
-        Instruction *ins = (Instruction *)i;
+        Instruction *ins = (Instruction *)&*i;
         if (isa<CallInst>(ins) && splitedIns.find(ins) == splitedIns.end()) {
           splitedIns.insert(ins);
-          BasicBlock *tmp = b->splitBasicBlock(ins);
+          // BasicBlock *tmp = b->splitBasicBlock(ins);
           // outs()<<*tmp;
           break;
         }
@@ -59,10 +59,10 @@ public:
 
         auto idup = i;
         idup++;
-        Instruction *insnext = (Instruction *)idup;
+        Instruction *insnext = (Instruction *)&*idup;
         if (isa<CallInst>(ins) && splitedIns.find(ins) != splitedIns.end() &&
             idup != b->end() && !isa<CallInst>(insnext)) {
-          BasicBlock *tmp = b->splitBasicBlock(insnext);
+          // BasicBlock *tmp = b->splitBasicBlock(insnext);
           // outs()<<*tmp;
           break;
         }
@@ -71,7 +71,7 @@ public:
 
     /*******************split the false branch edge*******************/
     for (auto it = f.begin(); it != f.end(); it++) {
-      BasicBlock *bb = (BasicBlock *)it;
+      BasicBlock *bb = (BasicBlock *)&*it;
       TerminatorInst *ti = bb->getTerminator();
       if (isa<BranchInst>(ti) && ti->getNumOperands() == 3) {
         BasicBlock *bbf = (BasicBlock *)(ti->getOperand(1)); // TODO: the order
@@ -88,7 +88,7 @@ public:
     /*******************build cfg*******************/
     vector<BasicBlock *> vec;
     for (auto it = f.begin(); it != f.end(); it++) {
-      BasicBlock *b = (BasicBlock *)it;
+      BasicBlock *b = (BasicBlock *)&*it;
       vec.push_back(b);
     }
     string name = f.getName();

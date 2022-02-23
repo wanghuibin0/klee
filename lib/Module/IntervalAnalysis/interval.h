@@ -18,7 +18,7 @@ private:
   int lower;
 
 public:
-  Interval(int lower, int upper) : lower(lower), upper(upper) {}
+  Interval(int lower, int upper) : upper(upper), lower(lower) {}
   Interval() : upper(-1), lower(1) {} // bottom no info
 
   Interval(const Interval &other) : upper(other.upper), lower(other.lower) {}

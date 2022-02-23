@@ -31,6 +31,7 @@ klee_add_component(kleeModule
 )
 
 add_subdirectory(IntervalInfo)
+#add_subdirectory(IntervalAnalysis)
 
 set(LLVM_COMPONENTS
   bitreader
@@ -46,4 +47,5 @@ klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
 target_link_libraries(kleeModule PUBLIC ${LLVM_LIBS})
 target_link_libraries(kleeModule PUBLIC
   kleeInterval
+  #kleeIntervalAnalysis
 )

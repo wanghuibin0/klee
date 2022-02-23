@@ -40,7 +40,7 @@ public:
   } // if v appears, then remove all pairs containing v
   bool hasPair(Value *v1, Value *v2) {
     for (auto &pair : rels) {
-      if ((pair.v1 == v1 && pair.v2 == v2) || pair.v1 == v2 && pair.v2 == v1) {
+      if ((pair.v1 == v1 && pair.v2 == v2) || (pair.v1 == v2 && pair.v2 == v1)) {
         return true;
       }
     }
