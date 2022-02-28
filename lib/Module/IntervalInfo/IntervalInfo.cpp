@@ -1,3 +1,5 @@
+#include "MyDebug.h"
+
 #include "IntervalInfo.h"
 #include "Env.h"
 #include "EnvMap.h"
@@ -8,6 +10,9 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <deque>
@@ -28,13 +33,13 @@ IntervalInfoPass::~IntervalInfoPass() {}
 // initialize env of entry to Top
 // initialize all arguments to Top
 void IntervalInfoPass::initializeEntryInfo(Function &f, BasicBlock &entry) {
-  getGlobalEnvMap().update(nullptr, &entry, Env::Top());
+  getGlobalEnvMap().update(nullptr, &entry, Env());
 
   for (auto &arg : f.args()) {
-    outs() << "processing args: " << arg << "\n";
+    MY_KLEE_DEBUG(outs() << "processing args: " << arg << "\n");
     llvm::Type *ty = arg.getType();
     if (isa<llvm::IntegerType>(ty)) {
-      outs() << "this is an integer type\n";
+      MY_KLEE_DEBUG(outs() << "this is an integer type\n");
       getGlobalEnvMap()
         .getEnv(nullptr, &entry)
         .set(&arg, Interval::Top());
@@ -43,7 +48,15 @@ void IntervalInfoPass::initializeEntryInfo(Function &f, BasicBlock &entry) {
 }
 
 bool IntervalInfoPass::runOnFunction(Function &f) {
-  llvm::outs() << "computing interval info for " << f.getName() << "\n";
+  llvm::outs() << "this is the start of loop info computing\n";
+  llvm::FunctionAnalysisManager FAM;
+  FAM.registerPass([&] { return LoopAnalysis(); });
+  FAM.registerPass([&] { return DominatorTreeAnalysis(); });
+  llvm::LoopInfo LI{std::move(FAM.getResult<LoopAnalysis>(f))};
+  LI.print(llvm::outs());
+  llvm::outs() << "this is the end of loop info computing\n";
+
+  MY_KLEE_DEBUG(llvm::outs() << "computing interval info for " << f.getName() << "\n");
   // initialize env of all blocks
   // add entry block to worklist
   BasicBlock &entry = f.getEntryBlock();
@@ -55,15 +68,15 @@ bool IntervalInfoPass::runOnFunction(Function &f) {
   while (!worklist.empty()) {
     auto bb = worklist.front();
     worklist.pop_front();
-    outs() << "processing this basicblock: " << bb->getName() << "\n";
-    bb->print(outs());
+    MY_KLEE_DEBUG(outs() << "processing this basicblock: " << bb->getName() << "\n");
+    MY_KLEE_DEBUG(bb->print(outs()));
 
     std::map<BasicBlock*, Env> oldOut;
     for (auto it : successors(bb)) {
       oldOut[&*it] = getGlobalEnvMap().getEnv(bb, &*it);
     }
 
-    Transfer trans(bb, getGlobalEnvMap());
+    Transfer trans(bb, getGlobalEnvMap(), LI);
 
     trans.execute(); // TODO: widening
 
@@ -75,7 +88,7 @@ bool IntervalInfoPass::runOnFunction(Function &f) {
     }
   }
 
-  getGlobalEnvMap().dump();
+  MY_KLEE_DEBUG(getGlobalEnvMap().dump());
 
   return false;
 }

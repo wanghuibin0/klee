@@ -10,7 +10,6 @@ namespace klee {
 class Env;
 class IntervalInfoPass : public llvm::FunctionPass {
 private:
-
 public:
   static char ID;
   IntervalInfoPass();
