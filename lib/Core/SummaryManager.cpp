@@ -1,8 +1,9 @@
 #include "klee/Core/SummaryManager.h"
 #include "CSExecutor.h"
+#include "Summary.h"
 
-#include "llvm/Support/CommandLine.h"
 #include "llvm/IR/Function.h"
+#include "llvm/Support/CommandLine.h"
 
 #include <cassert>
 
@@ -26,44 +27,35 @@ cl::opt<InterpreterType> InterpreterToUse(
     cl::init(NOCSE), cl::cat(InterpreterCat));
 } // namespace klee
 
-SummaryManager *SummaryManager::createSummaryManager(const Executor &mainExecutor) {
+SummaryManager *
+SummaryManager::createSummaryManager(const Executor &mainExecutor) {
   if (InterpreterToUse == BUCSE) {
-    llvm::errs() << "creating bucse summary manager.\n";
+    llvm::outs() << "creating bucse summary manager.\n";
     return new BUCSESummaryManager(mainExecutor);
   } else {
     return nullptr;
   }
 }
 
-Summary *BUCSESummaryManager::getSummary(ExecutionState &es, llvm::Function *f) {
-  llvm::errs() << "getting summary for function " << f->getName() << "\n";
+Summary *BUCSESummaryManager::getSummary(ExecutionState &es,
+                                         llvm::Function *f) {
+  llvm::outs() << "getting summary for function " << f->getName() << "\n";
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
-    llvm::errs() << "summary does not exist, try to compute.\n";
-    Summary *sum = computeSummary(f);
-    summaryLib.insert(std::make_pair(f, sum));
-    return sum;
+    llvm::outs() << "summary does not exist, try to compute.\n";
+    std::unique_ptr<Summary> sum = computeSummary(f);
+    summaryLib.insert(std::make_pair(f, std::move(sum)));
+    return sum.get();
   } else {
-    llvm::errs() << "summary exists, reusing.\n";
-    return summaryLib[f];
+    llvm::outs() << "summary exists, reusing.\n";
+    return summaryLib[f].get();
   }
 }
 
-Summary *BUCSESummaryManager::computeSummary(llvm::Function *f) {
-  // TODO: placeholder to be filled
-  BUCSExecutor *executor = createBUCSExecutor(f);
+std::unique_ptr<Summary> BUCSESummaryManager::computeSummary(llvm::Function *f) {
+  BUCSExecutor *executor = new BUCSExecutor(proto, f);
   executor->run();
-  Summary *sum = executor->extractSummary();
-  // TODO: should be deleted, in case of memory leak.
-  // but it can cause another problem, so leave it temporarily.
-  // delete executor;
+  std::unique_ptr<Summary> sum = executor->extractSummary();
+  delete executor;
   return sum;
-}
-
-BUCSExecutor *BUCSESummaryManager::createBUCSExecutor(llvm::Function *f) {
-  llvm::errs() << "creating a bucse executor\n";
-  auto e = new BUCSExecutor(proto, f);
-//  llvm::errs() << "proto->summaryManager = " << proto.getSummaryManager() << "\n";
-//  llvm::errs() << "e->summaryManager = " << e->getSummaryManager() << "\n";
-  return e;
 }

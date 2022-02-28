@@ -1,10 +1,9 @@
 #ifndef KLEE_INTERPRETERMANAGER_H
 #define KLEE_INTERPRETERMANAGER_H
 
-//#include "klee/ADT/Ref.h"
-//#include "klee/Expr/Expr.h"
 #include "../lib/Core/CSExecutor.h"
 #include "llvm/Support/CommandLine.h"
+#include "../lib/Core/Summary.h"
 
 #include <map>
 #include <vector>
@@ -22,7 +21,8 @@ extern llvm::cl::opt<InterpreterType> InterpreterToUse;
 
 class SummaryManager {
 public:
-  SummaryManager() {}
+  SummaryManager() = default;
+  virtual ~SummaryManager() = default;
 
   static SummaryManager *createSummaryManager(const Executor &mainExecutor);
   virtual Summary *getSummary(ExecutionState &es, llvm::Function *f) = 0;
@@ -31,52 +31,19 @@ public:
 class BUCSESummaryManager : public SummaryManager {
 public:
   // ctors
-  BUCSESummaryManager(const Executor &mainExecutor) : proto(mainExecutor) {
+  BUCSESummaryManager(const Executor &mainExecutor) : summaryLib(), proto(mainExecutor) {
     proto.setSummaryManager(this);
   }
 
-  Summary *getSummary(ExecutionState &es, llvm::Function *f);
+  Summary *getSummary(ExecutionState &es, llvm::Function *f) override;
 
 private:
-  Summary *computeSummary(llvm::Function *f);
-  BUCSExecutor *createBUCSExecutor(llvm::Function *f);
+  std::unique_ptr<Summary> computeSummary(llvm::Function *f);
 
 private:
-  std::map<llvm::Function *, Summary *> summaryLib;
-  Executor proto;
+  std::map<llvm::Function *, std::unique_ptr<Summary>> summaryLib;
+  Executor proto; // this will be prototypes of all future summary executors
 };
-
-// class SummaryManager {
-// public:
-//   // ctors
-//   SummaryManager(enum InterpreterType type) : type(type) {}
-
-//   Summary *getSummary(llvm::Function *f);
-
-// private:
-//   Summary *computeSummary(llvm::Function *f);
-//   void putSummaryToLib(llvm::Function *f, Summary *sum);
-//   CSExecutor *createCSExecutor(llvm::Function *f);
-
-// private:
-//   std::map<llvm::Function *, Summary *> summaryLib;
-// };
-
-// class SummaryManager {
-// public:
-//   // ctors
-//   SummaryManager(enum InterpreterType type) : type(type) {}
-
-//   Summary *getSummary(llvm::Function *f);
-
-// private:
-//   Summary *computeSummary(llvm::Function *f);
-//   void putSummaryToLib(llvm::Function *f, Summary *sum);
-//   CSExecutor *createCSExecutor(llvm::Function *f);
-
-// private:
-//   std::map<llvm::Function *, Summary *> summaryLib;
-// };
 
 } // namespace klee
 

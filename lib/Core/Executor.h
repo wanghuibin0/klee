@@ -22,15 +22,15 @@
 #include "klee/Core/Interpreter.h"
 #include "klee/Expr/ArrayCache.h"
 #include "klee/Expr/ArrayExprOptimizer.h"
+#include "klee/Expr/ExprReplaceVisitor.h"
 #include "klee/Module/Cell.h"
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
 #include "klee/System/Time.h"
-#include "klee/Expr/ExprReplaceVisitor.h"
 
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/GlobalValue.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <map>
 #include <memory>
@@ -332,11 +332,13 @@ protected:
   void executeCall(ExecutionState &state, KInstruction *ki, llvm::Function *f,
                    std::vector<ref<Expr>> &arguments);
 
-  bool executeCallCompositionally(ExecutionState &state, KInstruction *ki, llvm::Function *f,
-                   std::vector<ref<Expr>> &arguments);
+  bool executeCallCompositionally(ExecutionState &state, KInstruction *ki,
+                                  llvm::Function *f,
+                                  std::vector<ref<Expr>> &arguments);
 
   // apply the summary found to current state, may generate multitude state.
-  void applySummary(ExecutionState &state, std::vector<ref<Expr>> &arguments, Summary *s);
+  void applySummary(ExecutionState &state, std::vector<ref<Expr>> &arguments,
+                    Summary *s);
 
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
@@ -432,14 +434,16 @@ protected:
   // remove state from queue and delete
   virtual void terminateState(ExecutionState &state);
   // call exit handler and terminate state
-  virtual void terminateStateEarly(ExecutionState &state, const llvm::Twine &message);
+  virtual void terminateStateEarly(ExecutionState &state,
+                                   const llvm::Twine &message);
   // call exit handler and terminate state
   virtual void terminateStateOnExit(ExecutionState &state);
   // call error handler and terminate state
-  virtual void terminateStateOnError(ExecutionState &state, const llvm::Twine &message,
-                             enum TerminateReason termReason,
-                             const char *suffix = NULL,
-                             const llvm::Twine &longMessage = "");
+  virtual void terminateStateOnError(ExecutionState &state,
+                                     const llvm::Twine &message,
+                                     enum TerminateReason termReason,
+                                     const char *suffix = NULL,
+                                     const llvm::Twine &longMessage = "");
 
   // call error handler and terminate state, for execution errors
   // (things that should not be possible, like illegal instruction or
@@ -491,13 +495,9 @@ public:
 
   const InterpreterHandler &getHandler() { return *interpreterHandler; }
 
-  void setSummaryManager(SummaryManager *sm) {
-    summaryManager = sm;
-  }
+  void setSummaryManager(SummaryManager *sm) { summaryManager = sm; }
 
-  SummaryManager *getSummaryManager() const {
-    return summaryManager;
-  }
+  SummaryManager *getSummaryManager() const { return summaryManager; }
 
   void setPathWriter(TreeStreamWriter *tsw) override { pathWriter = tsw; }
 
@@ -567,138 +567,17 @@ public:
   bool checkCompatible(ExecutionState &es, Summary &sum);
   // apply summary to a state, may generate new states, delete states, set
   // flags to executor.
-  void applySummaryToAState(ExecutionState &es,
-                            std::vector<ref<Expr>> &args,
+  void applySummaryToAState(ExecutionState &es, std::vector<ref<Expr>> &args,
                             Summary &sum);
-  ExecutionState *applyNormalPathSummaryToAState(ExecutionState &es,
-                                                 ExprReplaceVisitor2 &replaceMap,
-                                                 NormalPathSummary *nps);
+  ExecutionState *
+  applyNormalPathSummaryToAState(ExecutionState &es,
+                                 ExprReplaceVisitor2 &replaceMap,
+                                 NormalPathSummary *nps);
   void applyErrorPathSummaryToAState(ExecutionState &es,
                                      ExprReplaceVisitor2 &replaceMap,
                                      ErrorPathSummary *eps);
 };
 
-// summary and executor depends on each other, so we put them together.
-
-class NormalPathSummary {
-  ConstraintSet preCond;
-  bool isVoidRet;
-  ref<Expr> retVal;
-  std::map<const llvm::GlobalValue*, ref<Expr>> globalsMod;
-
-public:
-  NormalPathSummary() = default;
-  void setPreCond(const ConstraintSet &cs) { preCond = cs; }
-  void markVoidRet(bool isVoidRet) { this->isVoidRet = isVoidRet; }
-  void setRetValue(ref<Expr> ret) {
-    assert(isVoidRet == false);
-    retVal = ret;
-  }
-  void addGlobalsModified(const llvm::GlobalValue *gv, ref<Expr> val) {
-    globalsMod.insert(std::make_pair(gv, val));
-  }
-
-  const ConstraintSet &getPreCond() const { return preCond; }
-  bool getIsVoidRet() const { return isVoidRet; }
-  ref<Expr> getRetVal() const { return retVal; }
-  const std::map<const llvm::GlobalValue*, ref<Expr>> &getGlobalsMod() const { return globalsMod; }
-
-  void dump() const {
-    llvm::errs() << "this is a normal path summary\n";
-    llvm::errs() << "pre conditions are:\n";
-    for (auto x : preCond) {
-      x->dump();
-    }
-    llvm::errs() << "is void return? " << isVoidRet << "\n";
-    if (!isVoidRet) {
-      llvm::errs() << "retVal = ";
-      retVal->dump();
-    }
-    llvm::errs() << "globals modified:\n";
-    for (auto x :  globalsMod) {
-      llvm::errs() << x.first->getName() << ": ";
-      x.second->dump();
-    }
-  }
-};
-
-class ErrorPathSummary {
-  ConstraintSet preCond;
-  enum Executor::TerminateReason tr;
-public:
-  ErrorPathSummary(ConstraintSet &preCond, enum Executor::TerminateReason tr) : preCond(preCond), tr(tr) {}
-  const ConstraintSet &getPreCond() const { return preCond; }
-  enum Executor::TerminateReason getTerminateReason() const { return tr; }
-  void dump() {
-    llvm::errs() << "this is an error path summary\n";
-    llvm::errs() << "pre conditions are:\n";
-    for (auto x : preCond) {
-      x->dump();
-    }
-    llvm::errs() << "terminate reason is: " << Executor::TerminateReasonNames[tr] << "\n";
-  }
-};
-
-class Summary {
-  llvm::Function *function;
-  ref<Expr> context;
-  // std::map<llvm::Value*, ref<Expr>> args;
-  std::vector<ref<Expr>> args;
-  std::map<llvm::GlobalValue*, ref<Expr>> globals;
-  std::vector<NormalPathSummary *> normalPathSummaries;
-  std::vector<ErrorPathSummary *> errorPathSummaries;
-
-public:
-  Summary(llvm::Function *f) : function(f) {}
-
-  void addNormalPathSummary(NormalPathSummary *ps) { normalPathSummaries.push_back(ps); }
-  void addErrorPathSummary(ErrorPathSummary *ps) { errorPathSummaries.push_back(ps); }
-  void addContext(ConstraintSet &c) {
-    ref<Expr> aContext = ConstantExpr::create(1, Expr::Bool);
-    for (auto &x : c) {
-      aContext = AndExpr::create(aContext, x);
-    }
-    context = OrExpr::create(context, aContext);
-  }
-  void setContext(ref<Expr> c) {
-    context = c;
-  }
-  void addArg(llvm::Value *farg, ref<Expr> arg) {
-    args.push_back(arg);
-  }
-
-  llvm::Function *getFunction() const { return function; }
-  ref<Expr> getContext() const { return context; }
-  const std::vector<ref<Expr>> &getFormalArgs() const { return args; }
-  const std::vector<NormalPathSummary*> &getNormalPathSummaries() const { return normalPathSummaries; }
-  const std::vector<ErrorPathSummary*> &getErrorPathSummaries() const { return errorPathSummaries; }
-  const std::map<llvm::GlobalValue*, ref<Expr>> &getFormalGlobals() const { return globals; }
-
-  void dump() {
-    llvm::errs() << "function name: " << function->getName() << "\n";
-    llvm::errs() << "context is: ";
-    context->dump();
-    llvm::errs() << "arguments are: \n";
-    for (auto a : args) {
-      a->dump();
-      llvm::errs() << "; ";
-    }
-    llvm::errs() << "globals: \n";
-    for (auto g : globals) {
-      llvm::errs() << "key: " << g.first->getName() << "\n";
-      llvm::errs() << "val: ";
-      g.second->dump();
-      llvm::errs() << "; ";
-    }
-
-    for (auto nps : normalPathSummaries) {
-      nps->dump();
-    }
-    for (auto eps : errorPathSummaries) {
-      eps->dump();
-    }
-  }
-};
 
 } // namespace klee
 

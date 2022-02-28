@@ -1406,7 +1406,7 @@ int main(int argc, char **argv, char **envp) {
   // locale and other data and then calls main.
 
   auto finalModule = interpreter->setModule(loadedModules, Opts);
-  exit(0);
+  //exit(0);
   Function *mainFn = finalModule->getFunction(EntryPoint);
   if (!mainFn) {
     klee_error("Entry function '%s' not found in module.", EntryPoint.c_str());
@@ -1555,6 +1555,7 @@ int main(int argc, char **argv, char **envp) {
   delete[] pArgv;
 
   delete interpreter;
+  delete sm;
 
   uint64_t queries =
     *theStatisticManager->getStatisticByName("Queries");

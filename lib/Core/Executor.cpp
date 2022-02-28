@@ -9,6 +9,8 @@
 
 #include "Executor.h"
 
+#include "Summary.h"
+
 #include "Context.h"
 #include "CoreStats.h"
 #include "ExecutionState.h"
@@ -5031,7 +5033,7 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
   for (auto pre : nps->getPreCond()) {
     addConstraint(*newState, replaceMap.visit(pre));
   }
-  terminateStateOnError(*newState, "apply error path summary", nps->getTerminateReason());
+  terminateStateOnError(*newState, "apply error path summary", (enum TerminateReason)nps->getTerminateReason());
 }
 
 ///

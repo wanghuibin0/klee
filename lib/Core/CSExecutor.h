@@ -2,6 +2,7 @@
 #define KLEE_CSEXECUTOR_H
 
 #include "Executor.h"
+#include <utility>
 
 namespace klee {
 
@@ -9,7 +10,7 @@ class BUCSExecutor : public Executor {
 public:
   BUCSExecutor(const Executor &proto, llvm::Function *f);
   void run();
-  Summary *extractSummary();
+  std::unique_ptr<Summary> extractSummary();
 
 private:
   ExecutionState *createInitialState(llvm::Function *f);
@@ -19,24 +20,24 @@ private:
 
 
   // remove state from queue and delete
-  virtual void terminateState(ExecutionState &state) override;
+  void terminateState(ExecutionState &state) override;
   // call exit handler and terminate state
-  virtual void terminateStateEarly(ExecutionState &state,
+  void terminateStateEarly(ExecutionState &state,
                                    const llvm::Twine &message) override;
   // call exit handler and terminate state
-  virtual void terminateStateOnExit(ExecutionState &state) override;
+  void terminateStateOnExit(ExecutionState &state) override;
   // call error handler and terminate state
-  virtual void terminateStateOnError(ExecutionState &state,
+  void terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &message,
                                      enum TerminateReason termReason,
                                      const char *suffix = NULL,
                                      const llvm::Twine &longMessage = "") override;
 
-  virtual void stepInstruction(ExecutionState &state);
+  void stepInstruction(ExecutionState &state) override;
 
 private:
   llvm::Function *func;
-  Summary *summary;
+  std::unique_ptr<Summary> summary;
   std::vector<const llvm::GlobalValue*> globalsMod;
 };
 

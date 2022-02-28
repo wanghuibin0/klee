@@ -4,6 +4,7 @@
 #include "StatsTracker.h"
 #include "CoreStats.h"
 
+#include "Summary.h"
 #include "klee/Core/SummaryManager.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -49,14 +50,14 @@ void BUCSExecutor::run() {
 
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
-    llvm::errs() << "new round, current state is " << &state << "\n";
+    llvm::outs() << "new round, current state is " << &state << "\n";
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
     timers.invoke();
     updateStates(&state);
-    llvm::errs() << "after this round, remaining " << states.size() << " states.\n";
+    llvm::outs() << "after this round, remaining " << states.size() << " states.\n";
   }
 
   delete searcher;
@@ -68,7 +69,7 @@ void BUCSExecutor::run() {
   // the computed summary has been stored in summaryLib path by path online,
   // so it is unnecessary to store them explicitly.
 }
-Summary *BUCSExecutor::extractSummary() { return summary; }
+std::unique_ptr<Summary> BUCSExecutor::extractSummary() { return std::move(summary); }
 
 ExecutionState *BUCSExecutor::createInitialState(Function *f) {
   ExecutionState *state = new ExecutionState(kmodule->functionMap[f]);
@@ -81,7 +82,7 @@ void BUCSExecutor::initializeGlobals(ExecutionState &state) {
   allocateGlobalObjects(state);
   initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
-//  llvm::errs() << "after initialize globals, dump the address space\n";
+//  llvm::outs() << "after initialize globals, dump the address space\n";
 //  state.addressSpace.dump();
 }
 
@@ -100,8 +101,8 @@ void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
       globalsMod.push_back(&v);
-      llvm::errs() << "make a global variable symbolic: " << name << "\n";
-      llvm::errs() << "the memory object is: \n";
+      llvm::outs() << "make a global variable symbolic: " << name << "\n";
+      llvm::outs() << "the memory object is: \n";
       mo->dump();
     }
   }
@@ -117,7 +118,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
     Expr::Width w = 0;
 
     if (isa<llvm::PointerType>(argTy)) {
-      llvm::errs()
+      llvm::outs()
           << "in BUCSExecutor::makeArgsSymbolic: function arg is a pointer\n";
       w = Context::get().getPointerWidth();
     } else {
@@ -141,13 +142,13 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
-      llvm::errs() << "this arg " << name << " is a pointer, allocate some memory for its pointee\n";
+      llvm::outs() << "this arg " << name << " is a pointer, allocate some memory for its pointee\n";
     } else {
-      llvm::errs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic "
+      llvm::outs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic "
                       "array with size "
                    << w << "\n";
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
-      llvm::errs() << "the arg name is " << name << "\n";
+      llvm::outs() << "the arg name is " << name << "\n";
       const Array *array = arrayCache.CreateArray(
           name,
           Expr::getMinBytesForWidth(w));
@@ -216,7 +217,7 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
     MemoryObject *mo = globalObjects[g];
     const ObjectState *os = state.addressSpace.findObject(mo);
     ref<Expr> gVal = os->read(0, w);
-    llvm::errs() << "adding a modified global: ";
+    llvm::outs() << "adding a modified global: ";
     gVal->dump();
     ps->addGlobalsModified(g, gVal);
   }
@@ -232,9 +233,9 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
                                          enum TerminateReason termReason,
                                          const char *suffix,
                                          const llvm::Twine &info) {
-  llvm::errs() << "terminate this state because error: " << TerminateReasonNames[termReason] << "\n";
+  llvm::outs() << "terminate this state because error: " << TerminateReasonNames[termReason] << "\n";
   // construct an error path summary
-  ErrorPathSummary *eps = new ErrorPathSummary(state.constraints, termReason);
+  ErrorPathSummary *eps = new ErrorPathSummary(state.constraints, (enum ErrorReason)termReason);
 
   // since the error path will be terminated immediately, we do not handle
   // globals for simplicity.
@@ -253,12 +254,12 @@ void BUCSExecutor::stepInstruction(ExecutionState &state) {
   ++instCnter;
 
   Instruction *inst = ki->inst;
-  errs() << "this instruction: " << *inst << "\n";
-  errs() << "counter is: " << instCnter << "\n";
+  outs() << "this instruction: " << *inst << "\n";
+  outs() << "counter is: " << instCnter << "\n";
 
   if (instCnter >= MaxLoopUnroll) {
-    errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
-    errs() << "reach max loop unroll\n";
+    outs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
+    outs() << "reach max loop unroll\n";
     terminateState(state);
   }
 
