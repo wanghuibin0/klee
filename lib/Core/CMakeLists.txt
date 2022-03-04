@@ -9,6 +9,7 @@
 klee_add_component(kleeCore
   SummaryManager.cpp
   CSExecutor.cpp
+  ProtoExecutor.cpp
   AddressSpace.cpp
   MergeHandler.cpp
   CallPathManager.cpp

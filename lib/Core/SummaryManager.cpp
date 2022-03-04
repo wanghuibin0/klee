@@ -1,11 +1,10 @@
 #include "klee/Core/SummaryManager.h"
+#include "ConcreteSummaryManager.h"
 #include "CSExecutor.h"
 #include "Summary.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
-
-#include <cassert>
 
 using namespace llvm;
 using namespace klee;
@@ -32,6 +31,9 @@ SummaryManager::createSummaryManager(const Executor &mainExecutor) {
   if (InterpreterToUse == BUCSE) {
     llvm::outs() << "creating bucse summary manager.\n";
     return new BUCSESummaryManager(mainExecutor);
+  } else if (InterpreterToUse == CTXCSE) {
+    llvm::outs() << "creating ctxcse summary manager.\n";
+    return new CTXCSESummaryManager(mainExecutor);
   } else {
     return nullptr;
   }
@@ -54,6 +56,28 @@ Summary *BUCSESummaryManager::getSummary(ExecutionState &es,
 
 std::unique_ptr<Summary> BUCSESummaryManager::computeSummary(llvm::Function *f) {
   BUCSExecutor *executor = new BUCSExecutor(proto, f);
+  executor->run();
+  std::unique_ptr<Summary> sum = executor->extractSummary();
+  delete executor;
+  return sum;
+}
+
+Summary *CTXCSESummaryManager::getSummary(ExecutionState &es, llvm::Function *f) {
+  llvm::outs() << "getting summary for function " << f->getName() << "\n";
+  if (summaryLib.find(f) == summaryLib.end()) {
+    // summary does not exist, try to compute.
+    llvm::outs() << "summary does not exist, try to compute.\n";
+    std::unique_ptr<Summary> sum = computeSummary(f);
+    summaryLib.insert(std::make_pair(f, std::move(sum)));
+    return sum.get();
+  } else {
+    llvm::outs() << "summary exists, reusing.\n";
+    return summaryLib[f].get();
+  }
+}
+
+std::unique_ptr<Summary> CTXCSESummaryManager::computeSummary(llvm::Function *f) {
+  CTXCSExecutor *executor = new CTXCSExecutor(proto, f);
   executor->run();
   std::unique_ptr<Summary> sum = executor->extractSummary();
   delete executor;

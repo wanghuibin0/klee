@@ -495,9 +495,8 @@ public:
 
   const InterpreterHandler &getHandler() { return *interpreterHandler; }
 
-  void setSummaryManager(SummaryManager *sm) { summaryManager = sm; }
-
   SummaryManager *getSummaryManager() const { return summaryManager; }
+  void setSummaryManager(SummaryManager *sm) { summaryManager = sm; }
 
   void setPathWriter(TreeStreamWriter *tsw) override { pathWriter = tsw; }
 

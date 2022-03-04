@@ -55,7 +55,7 @@
 #include "klee/System/MemoryUsage.h"
 #include "klee/System/Time.h"
 
-#include "klee/Core/SummaryManager.h"
+#include "ConcreteSummaryManager.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"

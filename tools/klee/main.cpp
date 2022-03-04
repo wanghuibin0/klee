@@ -1406,7 +1406,6 @@ int main(int argc, char **argv, char **envp) {
   // locale and other data and then calls main.
 
   auto finalModule = interpreter->setModule(loadedModules, Opts);
-  //exit(0);
   Function *mainFn = finalModule->getFunction(EntryPoint);
   if (!mainFn) {
     klee_error("Entry function '%s' not found in module.", EntryPoint.c_str());
@@ -1419,6 +1418,8 @@ int main(int argc, char **argv, char **envp) {
   }
 
   // for compostional SE
+  // create and set SummaryManager
+
   // create SummaryManager
   Executor *e = static_cast<Executor*>(interpreter);
   SummaryManager *sm = SummaryManager::createSummaryManager(*e);
