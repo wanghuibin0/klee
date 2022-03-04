@@ -10,6 +10,7 @@ klee_add_component(kleeCore
   SummaryManager.cpp
   CSExecutor.cpp
   ProtoExecutor.cpp
+  CallCSEProxy.cpp
   AddressSpace.cpp
   MergeHandler.cpp
   CallPathManager.cpp

@@ -86,6 +86,7 @@ class NormalPathSummary;
 class ErrorPathSummary;
 class Summary;
 class SummaryManager;
+class CallCSEProxy;
 
 /// \todo Add a context object to keep track of data only live
 /// during an instruction step. Should contain addedStates,
@@ -101,6 +102,8 @@ class Executor : public Interpreter {
 
   friend class NormalPathSummary;
   friend class ErrorPathSummary;
+
+  friend class CallCSEProxy;
 
 public:
   typedef std::pair<ExecutionState *, ExecutionState *> StatePair;
