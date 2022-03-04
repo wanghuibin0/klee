@@ -160,9 +160,10 @@ public:
       os << "]";
     }
   }
+
 };
 
-llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Interval &i) {
+llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const klee::Interval &i) {
   i.dump(os);
   return os;
 }

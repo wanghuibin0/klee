@@ -6,6 +6,7 @@
 
 namespace llvm {
 class BasicBlock;
+class Function;
 }
 
 namespace klee {
@@ -37,6 +38,7 @@ public:
 };
 
 EnvMap &getGlobalEnvMap();
+std::map<llvm::Function *, Env> &getGlobalEnvContext();
 
 } // namespace klee
 

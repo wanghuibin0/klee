@@ -301,6 +301,7 @@ void KModule::optimiseAndPrepare(
   pm3.add(new PhiCleanerPass());
   pm3.add(new FunctionAliasPass());
   pm3.add(new IntervalInfoPass());
+  pm3.add(new IntervalCtxPass());
   pm3.run(*module);
 }
 

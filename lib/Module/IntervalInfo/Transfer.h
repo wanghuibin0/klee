@@ -44,6 +44,25 @@ public:
     updateEnvOut();
   }
 
+  Env executeToInst(llvm::Instruction *inst) {
+    assert(inst->getParent() == bb && "inst must be in bb");
+    gEnvMap.dump();
+    llvm::outs() << "bb: " << bb << "\n" << *bb;
+    internalEnv.dump(llvm::outs());
+    if (internalEnv.empty()) {
+      return Env();
+    }
+
+    for (auto &&i : *bb) {
+      if (&i == inst) {
+        return internalEnv;
+      } else {
+        executeInstruction(&i);
+      }
+    }
+    assert(0 && "must escape from the calling inst");
+  }
+
 private:
   /// this should be called before executing the block. (in constructor)
   /// worth noting that this is not appliable to entry block.
@@ -216,6 +235,22 @@ private:
     return ret;
   }
 
+  void trackBlockEqrels(EqRels &eqrels) {
+    for (auto &&i : *bb) {
+      if (llvm::isa<llvm::LoadInst>(&i)) {
+        llvm::Value *ptr = llvm::cast<llvm::LoadInst>(&i)->getPointerOperand();
+        eqrels.processLoad(ptr, &i);
+      } else if (llvm::isa<llvm::StoreInst>(&i)) {
+        llvm::Value *ptr = llvm::cast<llvm::StoreInst>(&i)->getPointerOperand();
+        llvm::Value *val = llvm::cast<llvm::StoreInst>(&i)->getValueOperand();
+        eqrels.processStore(ptr, val);
+      } else if (llvm::isa<llvm::BitCastInst>(&i)) {
+        llvm::Value *ptr = llvm::cast<llvm::BitCastInst>(&i)->getOperand(0);
+        eqrels.processBitCast(ptr, &i);
+      }
+    }
+  }
+
   void executeCmpInst(llvm::CmpInst *binst) {
     llvm::Value *op1 = binst->getOperand(0);
     llvm::ConstantInt *c1 = llvm::dyn_cast<llvm::ConstantInt>(op1);
@@ -232,15 +267,7 @@ private:
     llvm::BasicBlock *bbt = llvm::cast<llvm::BasicBlock>(ti->getOperand(2));
 
     EqRels eqrels;
-    for (auto &&i : *bb) {
-      if (llvm::isa<llvm::LoadInst>(&i)) {
-        llvm::Value *ptr = llvm::cast<llvm::LoadInst>(&i)->getPointerOperand();
-        eqrels.processLoad(ptr, &i);
-      } else if (llvm::isa<llvm::StoreInst>(&i)) {
-        llvm::Value *ptr = llvm::cast<llvm::StoreInst>(&i)->getPointerOperand();
-        eqrels.processStore(ptr, &i);
-      }
-    }
+    trackBlockEqrels(eqrels);
 
     llvm::CmpInst::Predicate p = binst->getPredicate();
 
@@ -331,23 +358,23 @@ private:
     assert(internalEnv.hasValue(op1));
     Interval i1 = internalEnv.lookup(op1);
 
-    MY_KLEE_DEBUG(llvm::outs() << "setting envmap for t " << bbt << " as "
-                               << (i1 & ipredicateT) << "\n");
-    MY_KLEE_DEBUG(llvm::outs() << "setting envmap for f " << bbf << " as "
-                               << (i1 & ipredicateF) << "\n");
     Env envT, envF;
-    std::vector<Pointer> &vecP = eqrels.getRelatedPointers(op1);
-    assert(vecP.size() == 1 &&
-           "I have assumed there is only one pointer for a vreg");
-    std::vector<VRegs> &vecV = eqrels.getRelatedVRegs(vecP.front());
-    for (auto &&it : vecV) {
-      envT.set(it, i1 & ipredicateT);
-      envF.set(it, i1 & ipredicateF);
-    }
-    envT.set(vecP.front(), i1 & ipredicateT);
-    envF.set(vecP.front(), i1 & ipredicateF);
+    genEnvsAtCond(envT, envF, eqrels, op1, i1 & ipredicateT, i1 & ipredicateF);
     succEnvs.insert(std::make_pair(bbt, envT));
     succEnvs.insert(std::make_pair(bbf, envF));
+  }
+
+  void genEnvsAtCond(Env &envT, Env &envF, EqRels &eqrels, llvm::Value *condOp, Interval predT, Interval predF) {
+    std::vector<Pointer> &vecP = eqrels.getRelatedPointers(condOp);
+    for (auto &&p : vecP) {
+      std::vector<VRegs> &vecV = eqrels.getRelatedVRegs(p);
+      envT.set(p, predT);
+      envF.set(p, predF);
+      for (auto &&v : vecV) {
+        envT.set(v, predT);
+        envF.set(v, predF);
+      }
+    }
   }
 
   // TODO
@@ -393,21 +420,15 @@ private:
     Interval i1 = internalEnv.lookup(op1);
 
     Env envT, envF;
-    std::vector<Pointer> &vecP = eqrels.getRelatedPointers(op1);
-    assert(vecP.size() == 1 &&
-           "I have assumed there is only one pointer for a vreg");
-    std::vector<VRegs> &vecV = eqrels.getRelatedVRegs(vecP.front());
-    for (auto &&it : vecV) {
-      envT.set(it, i1 & ipredicateT);
-      envF.set(it, i1 & ipredicateF);
-    }
-    envT.set(vecP.front(), i1 & ipredicateT);
-    envF.set(vecP.front(), i1 & ipredicateF);
+    genEnvsAtCond(envT, envF, eqrels, op1, i1 & ipredicateT, i1 & ipredicateF);
     succEnvs.insert(std::make_pair(bbt, envT));
     succEnvs.insert(std::make_pair(bbf, envF));
   }
 
   void executeCallInst(llvm::CallInst *cinst) {
+    EqRels eqrels;
+    trackBlockEqrels(eqrels);
+
     llvm::Function *f = cinst->getCalledFunction();
     llvm::StringRef name = f->getName();
     if (name == "klee_make_symbolic") {

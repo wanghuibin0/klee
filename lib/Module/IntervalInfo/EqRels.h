@@ -23,6 +23,13 @@ public:
     p2v[p].push_back(v);
   }
 
+  // p2 = bitcast p1
+  void processBitCast(Pointer p1, Pointer p2) {
+    for (auto &&r : p2v[p1]) {
+      v2p[r].push_back(p2);
+    }
+  }
+
   std::vector<Pointer> &getRelatedPointers(VRegs v) {
     return v2p[v];
   }
