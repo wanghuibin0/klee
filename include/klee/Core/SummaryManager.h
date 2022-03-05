@@ -12,7 +12,6 @@ class ExecutionState;
 
 class SummaryManager {
 public:
-  SummaryManager() = default;
   virtual ~SummaryManager() = default;
 
   static SummaryManager *createSummaryManager(const Executor &mainExecutor);
