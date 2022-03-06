@@ -1,5 +1,6 @@
 set(KLEE_INTERVALINFO_SRCS
   IntervalInfo.cpp
+  Interval.cpp
   )
 
 klee_add_component(kleeInterval

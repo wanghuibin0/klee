@@ -1706,6 +1706,8 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
   Summary *summary = sm->getSummary(state, f);
   if (summary && checkCompatible(state, *summary)) {
     // should prepare actual arguments before application.
+    llvm::outs() << "dumping summary before apply summary\n";
+    summary->dump();
     applySummary(state, arguments, summary);
     llvm::errs() << "success: compositional execution for function "
                  << f->getName() << "\n";
@@ -1722,7 +1724,8 @@ void Executor::applySummary(ExecutionState &state, std::vector<ref<Expr>> &argum
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            std::vector<ref<Expr>> &arguments) {
   static bool isCSEBegin = false;
-  if (f->getName() == "__klee_posix_wrapped_main") {
+  auto name = f->getName();
+  if (name == "__klee_posix_wrapped_main") {
     isCSEBegin = true;
   }
 
@@ -1850,7 +1853,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
   } else {
     llvm::errs() << "executing funciton calls\n";
     llvm::errs() << f->getName() << "\n";
-    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f) && isCSEBegin) {
+    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f)/* && isCSEBegin*/) {
       if (executeCallCompositionally(state, ki, f, arguments))
         return;
     }
@@ -4498,7 +4501,7 @@ void Executor::runFunctionAsMain(Function *f, int argc, char **argv,
 
   initializeGlobals(*state);
 
-  processTree = std::make_unique<PTree>(state);
+  //processTree = std::make_unique<PTree>(state);
   processTree = nullptr;
   run(*state);
   processTree = nullptr;
@@ -4972,14 +4975,18 @@ ExecutionState *
 Executor::applyNormalPathSummaryToAState(ExecutionState &es,
                                          ExprReplaceVisitor2 &replaceMap,
                                          NormalPathSummary *nps) {
-  // construct a new state
-  ExecutionState *newState = new ExecutionState(es);
+  nps->dump();
 
+  nps->dump();
   llvm::errs() << "applying a normal path summary to a state\n";
-//  nps->dump();
+  nps->dump();
 
   llvm::errs() << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n";
   es.dumpConstraint();
+
+  // construct a new state
+  ExecutionState *newState = new ExecutionState(es);
+
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
   for (auto pre : nps->getPreCond()) {

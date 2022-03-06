@@ -7,6 +7,7 @@
 #include "Transfer.h"
 
 #include "klee/Config/Version.h"
+#include "klee/Module/EnvContext.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/CallSite.h"
@@ -185,11 +186,18 @@ Env IntervalCtxPass::getArgsEnv(llvm::CallInst *ci) {
   for (; it != called->arg_end(); ++i, ++it) {
     llvm::Value *aa = ci->getOperand(i); // actual arg
     MY_KLEE_DEBUG(outs() << "actual value: " << *aa << "\n");
-    MY_KLEE_DEBUG(callingEnv.dump(outs()));
-    assert(callingEnv.hasValue(aa));
-    Interval i = callingEnv.lookup(aa);
-    llvm::Value *fa = &*it; // formal arg
-    res.set(fa, i);
+    if (llvm::isa<ConstantInt>(aa)) {
+      long v = llvm::cast<ConstantInt>(aa)->getSExtValue();
+      Interval i(v, v);
+      llvm::Value *fa = it;
+      res.set(fa, i);
+    } else {
+      MY_KLEE_DEBUG(callingEnv.dump(outs()));
+      assert(callingEnv.hasValue(aa));
+      Interval i = callingEnv.lookup(aa);
+      llvm::Value *fa = &*it; // formal arg
+      res.set(fa, i);
+    }
   }
 
   return res;

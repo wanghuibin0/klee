@@ -28,10 +28,7 @@ cl::opt<InterpreterType> InterpreterToUse(
 
 SummaryManager *
 SummaryManager::createSummaryManager(const Executor &mainExecutor) {
-  if (InterpreterToUse == BUCSE) {
-    llvm::outs() << "creating bucse summary manager.\n";
-    return new BUCSESummaryManager(mainExecutor);
-  } else if (InterpreterToUse == CTXCSE) {
+  if (InterpreterToUse == CTXCSE) {
     llvm::outs() << "creating ctxcse summary manager.\n";
     return new CTXCSESummaryManager(mainExecutor);
   } else {
@@ -39,37 +36,16 @@ SummaryManager::createSummaryManager(const Executor &mainExecutor) {
   }
 }
 
-Summary *BUCSESummaryManager::getSummary(ExecutionState &es,
+Summary *CTXCSESummaryManager::getSummary(ExecutionState &es,
                                          llvm::Function *f) {
   llvm::outs() << "getting summary for function " << f->getName() << "\n";
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
     llvm::outs() << "summary does not exist, try to compute.\n";
     std::unique_ptr<Summary> sum = computeSummary(f);
+    Summary *res = sum.get();
     summaryLib.insert(std::make_pair(f, std::move(sum)));
-    return sum.get();
-  } else {
-    llvm::outs() << "summary exists, reusing.\n";
-    return summaryLib[f].get();
-  }
-}
-
-std::unique_ptr<Summary> BUCSESummaryManager::computeSummary(llvm::Function *f) {
-  BUCSExecutor *executor = new BUCSExecutor(proto, f);
-  executor->run();
-  std::unique_ptr<Summary> sum = executor->extractSummary();
-  delete executor;
-  return sum;
-}
-
-Summary *CTXCSESummaryManager::getSummary(ExecutionState &es, llvm::Function *f) {
-  llvm::outs() << "getting summary for function " << f->getName() << "\n";
-  if (summaryLib.find(f) == summaryLib.end()) {
-    // summary does not exist, try to compute.
-    llvm::outs() << "summary does not exist, try to compute.\n";
-    std::unique_ptr<Summary> sum = computeSummary(f);
-    summaryLib.insert(std::make_pair(f, std::move(sum)));
-    return sum.get();
+    return res;
   } else {
     llvm::outs() << "summary exists, reusing.\n";
     return summaryLib[f].get();
@@ -83,3 +59,4 @@ std::unique_ptr<Summary> CTXCSESummaryManager::computeSummary(llvm::Function *f)
   delete executor;
   return sum;
 }
+

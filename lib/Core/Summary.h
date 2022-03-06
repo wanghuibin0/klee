@@ -102,6 +102,14 @@ class Summary {
 
 public:
   Summary(llvm::Function *f) : function(f) {}
+  ~Summary() {
+    for (auto &&np : normalPathSummaries) {
+      delete np;
+    }
+    for (auto &&ep : errorPathSummaries) {
+      delete ep;
+    }
+  }
 
   void addNormalPathSummary(NormalPathSummary *ps) {
     normalPathSummaries.push_back(ps);

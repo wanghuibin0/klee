@@ -6,6 +6,8 @@
 
 #include "Summary.h"
 #include "klee/Core/SummaryManager.h"
+#include "klee/Module/EnvContext.h"
+#include "../Module/IntervalInfo/Env.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -27,16 +29,18 @@ cl::opt<unsigned>
                   cl::init(5), cl::cat(TerminationCat));
 }
 
-BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
+CTXCSExecutor::CTXCSExecutor(const Executor &proto, llvm::Function *f)
     : Executor(proto), func(f), summary(new Summary(f)) {
   summary->setContext(ConstantExpr::create(1, Expr::Bool));
 }
 
-void BUCSExecutor::run() {
+void CTXCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
   // bindModuleConstants should be called after initializeGlobals
   bindModuleConstants();
+
+  buildConstraintFromStaticContext(es, func);
 
   // processTree = std::make_unique<PTree>(es);
 
@@ -68,18 +72,48 @@ void BUCSExecutor::run() {
   // the computed summary has been stored in summaryLib path by path online,
   // so it is unnecessary to store them explicitly.
 }
-std::unique_ptr<Summary> BUCSExecutor::extractSummary() {
+
+void CTXCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
+                                                     llvm::Function *f) {
+  std::map<Function *, Env> &context = getGlobalEnvContext();
+  Env &env = context[f];
+  env.dump(outs());
+
+  auto i = 0;
+  auto it = f->arg_begin();
+  for (; it != f->arg_end(); ++it, ++i) {
+    assert(env.hasValue(it) && "interval info for arg must be in env");
+    Interval interval = env.lookup(it);
+    if (interval.isTop()) {
+      continue;
+    }
+    IntTy lower = interval.getLower();
+    IntTy upper = interval.getUpper();
+
+    KFunction *kf = kmodule->functionMap[f];
+    ref<Expr> arg = getArgumentCell(*es, kf, i).value;
+
+    ref<Expr> expr1 = SgeExpr::create(arg, ConstantExpr::alloc(lower, Expr::Int32));
+    ref<Expr> expr2 = SleExpr::create(arg, ConstantExpr::alloc(upper, Expr::Int32));
+
+    ref<Expr> expr = AndExpr::create(expr1, expr2);
+
+    es->addConstraint(expr);
+  }
+}
+
+std::unique_ptr<Summary> CTXCSExecutor::extractSummary() {
   return std::move(summary);
 }
 
-ExecutionState *BUCSExecutor::createInitialState(Function *f) {
+ExecutionState *CTXCSExecutor::createInitialState(Function *f) {
   ExecutionState *state = new ExecutionState(kmodule->functionMap[f]);
   initializeGlobals(*state);
   makeArgsSymbolic(state);
   return state;
 }
 
-void BUCSExecutor::initializeGlobals(ExecutionState &state) {
+void CTXCSExecutor::initializeGlobals(ExecutionState &state) {
   allocateGlobalObjects(state);
   initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
@@ -87,7 +121,7 @@ void BUCSExecutor::initializeGlobals(ExecutionState &state) {
   //  state.addressSpace.dump();
 }
 
-void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
+void CTXCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
   const Module *m = kmodule->module.get();
 
   for (const GlobalVariable &v : m->globals()) {
@@ -109,7 +143,7 @@ void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
   }
 }
 
-void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
+void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
   KFunction *kf = kmodule->functionMap[func];
   unsigned numArgs = func->arg_size();
   auto arg_it = func->arg_begin();
@@ -120,7 +154,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
 
     if (isa<llvm::PointerType>(argTy)) {
       llvm::outs()
-          << "in BUCSExecutor::makeArgsSymbolic: function arg is a pointer\n";
+          << "in CTXCSExecutor::makeArgsSymbolic: function arg is a pointer\n";
       w = Context::get().getPointerWidth();
     } else {
       w = getWidthForLLVMType(argTy);
@@ -146,7 +180,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       llvm::outs() << "this arg " << name
                    << " is a pointer, allocate some memory for its pointee\n";
     } else {
-      llvm::outs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic "
+      llvm::outs() << "CTXCSExecutor::makeArgsSymbolic: creating new symbolic "
                       "array with size "
                    << w << "\n";
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
@@ -161,7 +195,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
   }
 }
 
-void BUCSExecutor::terminateState(ExecutionState &state) {
+void CTXCSExecutor::terminateState(ExecutionState &state) {
   interpreterHandler->incPathsExplored();
 
   std::vector<ExecutionState *>::iterator it =
@@ -178,14 +212,14 @@ void BUCSExecutor::terminateState(ExecutionState &state) {
   }
 }
 
-void BUCSExecutor::terminateStateEarly(ExecutionState &state,
-                                       const Twine &message) {
+void CTXCSExecutor::terminateStateEarly(ExecutionState &state,
+                                        const Twine &message) {
   // this state has been terminated early, it has no contricution to the summary
   // lib, just throw it.
   terminateState(state);
 }
 
-void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
+void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
   // this state has been terminate normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
 
@@ -228,11 +262,11 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
   terminateState(state);
 }
 
-void BUCSExecutor::terminateStateOnError(ExecutionState &state,
-                                         const llvm::Twine &messaget,
-                                         enum TerminateReason termReason,
-                                         const char *suffix,
-                                         const llvm::Twine &info) {
+void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
+                                          const llvm::Twine &messaget,
+                                          enum TerminateReason termReason,
+                                          const char *suffix,
+                                          const llvm::Twine &info) {
   llvm::outs() << "terminate this state because error: "
                << TerminateReasonNames[termReason] << "\n";
   // construct an error path summary
@@ -250,7 +284,7 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
     haltExecution = true;
 }
 
-void BUCSExecutor::stepInstruction(ExecutionState &state) {
+void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   KInstruction *ki = state.pc;
   unsigned &instCnter = state.stack.back().instCnterMap[ki];
   ++instCnter;
@@ -274,55 +308,3 @@ void BUCSExecutor::stepInstruction(ExecutionState &state) {
   state.prevPC = state.pc;
   ++state.pc;
 }
-
-// implementation of CTXCSExecutor
-CTXCSExecutor::CTXCSExecutor(const Executor &proto, llvm::Function *f)
-    : Executor(proto), func(f), summary(new Summary(f)) {
-  summary->setContext(ConstantExpr::create(1, Expr::Bool));
-}
-
-void CTXCSExecutor::run() {
-  ExecutionState *es = createInitialState(func);
-
-  // bindModuleConstants should be called after initializeGlobals
-  bindModuleConstants();
-
-  states.insert(es);
-
-  searcher = constructUserSearcher(*this);
-  std::vector<ExecutionState *> newStates(states.begin(), states.end());
-  searcher->update(0, newStates, std::vector<ExecutionState *>());
-
-  while (!states.empty() && !haltExecution) {
-    ExecutionState &state = searcher->selectState();
-    KInstruction *ki = state.pc;
-    stepInstruction(state);
-
-    executeInstruction(state, ki);
-    timers.invoke();
-    updateStates(&state);
-  }
-
-  delete searcher;
-  searcher = nullptr;
-}
-
-std::unique_ptr<Summary> CTXCSExecutor::extractSummary() {
-  return std::move(summary);
-}
-
-ExecutionState *CTXCSExecutor::createInitialState(llvm::Function *f) {
-  return nullptr;
-}
-
-void CTXCSExecutor::terminateState(ExecutionState &state) {}
-void CTXCSExecutor::terminateStateEarly(ExecutionState &state,
-                                        const llvm::Twine &message) {}
-void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {}
-void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
-                                          const llvm::Twine &message,
-                                          enum TerminateReason termReason,
-                                          const char *suffix,
-                                          const llvm::Twine &longMessage) {}
-
-void CTXCSExecutor::stepInstruction(ExecutionState &state) {}

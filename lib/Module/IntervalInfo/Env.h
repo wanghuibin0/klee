@@ -112,11 +112,7 @@ public:
   }
 };
 
-llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Env &e) {
-  e.dump(os);
-  return os;
-}
-
+llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Env &e);
 } // end namespace klee
 
 #endif

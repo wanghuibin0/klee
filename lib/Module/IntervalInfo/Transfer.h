@@ -49,7 +49,10 @@ public:
     gEnvMap.dump();
     llvm::outs() << "bb: " << bb << "\n" << *bb;
     internalEnv.dump(llvm::outs());
-    if (internalEnv.empty()) {
+
+    // env of entry block is always empty, so it should be excluded
+    bool isEntryBlock = (bb == &bb->getParent()->getEntryBlock());
+    if (!isEntryBlock && internalEnv.empty()) {
       return Env();
     }
 
