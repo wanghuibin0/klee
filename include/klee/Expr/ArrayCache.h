@@ -67,6 +67,8 @@ private:
   typedef std::vector<const Array *> ArrayPtrVec;
   ArrayPtrVec concreteArrays;
 };
+
+ArrayCache &getGlobalArrayCache();
 }
 
 #endif /* KLEE_ARRAYCACHE_H */

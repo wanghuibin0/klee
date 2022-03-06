@@ -428,6 +428,7 @@ const char *Executor::TerminateReasonNames[] = {
 Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                    InterpreterHandler *ih)
     : Interpreter(opts), interpreterHandler(ih), searcher(0), summaryManager(0),
+      arrayCache(getGlobalArrayCache()),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
       pathWriter(0), symPathWriter(0),
       specialFunctionHandler(0), timers(theTimerGroup),
@@ -496,6 +497,7 @@ Executor::Executor(const Executor &e)
     : Interpreter(e.interpreterOpts), kmodule(e.kmodule),
       interpreterHandler(e.interpreterHandler), searcher(0),
       summaryManager(e.summaryManager),
+      arrayCache(getGlobalArrayCache()),
       externalDispatcher(e.externalDispatcher), solver(e.solver),
       memory(new MemoryManager(&arrayCache)), statsTracker(0), pathWriter(0),
       symPathWriter(0),
@@ -4897,9 +4899,9 @@ void Executor::applySummaryToAState(ExecutionState &es,
   // do the actual substitution
   ExprReplaceVisitor2 erv(replaceMap);
 
-  const std::vector<NormalPathSummary *> &normalPathSummaries =
+  const std::vector<NormalPathSummary> &normalPathSummaries =
       sum.getNormalPathSummaries();
-  const std::vector<ErrorPathSummary *> &errorPathSummaries =
+  const std::vector<ErrorPathSummary> &errorPathSummaries =
       sum.getErrorPathSummaries();
 
   llvm::errs() << "applying a normal summary, it belongs to "
@@ -4974,12 +4976,10 @@ void Executor::applySummaryToAState(ExecutionState &es,
 ExecutionState *
 Executor::applyNormalPathSummaryToAState(ExecutionState &es,
                                          ExprReplaceVisitor2 &replaceMap,
-                                         NormalPathSummary *nps) {
-  nps->dump();
-
-  nps->dump();
+                                         const NormalPathSummary &nps) {
+  nps.dump();
   llvm::errs() << "applying a normal path summary to a state\n";
-  nps->dump();
+  nps.dump();
 
   llvm::errs() << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n";
   es.dumpConstraint();
@@ -4989,7 +4989,7 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
-  for (auto pre : nps->getPreCond()) {
+  for (auto pre : nps.getPreCond()) {
     llvm::errs() << "in Executor::applyNormalPathSummaryToAState: ";
     pre->dump();
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
@@ -5002,8 +5002,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   }
 
   // for ret result
-  if (!nps->getIsVoidRet()) {
-    auto retVal = replaceMap.visit(nps->getRetVal());
+  if (!nps.getIsVoidRet()) {
+    auto retVal = replaceMap.visit(nps.getRetVal());
     // TODO: bind it with the Instruction pointed by prevPc.
     bindLocal(newState->prevPC, *newState, retVal);
 //    llvm::errs() << "the ret val of new state is:\n";
@@ -5011,7 +5011,7 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   }
 
   // for globals
-  for (const auto x : nps->getGlobalsMod()) {
+  for (const auto x : nps.getGlobalsMod()) {
     const GlobalValue *gv = x.first;
     MemoryObject *mo = globalObjects.at(gv);
     const ObjectState *os = newState->addressSpace.findObject(mo);
@@ -5033,14 +5033,14 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 // summary for this function.
 void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
                                              ExprReplaceVisitor2 &replaceMap,
-                                             ErrorPathSummary *nps) {
+                                             const ErrorPathSummary &nps) {
   // construct a state
   ExecutionState *newState = new ExecutionState(es);
   addedStates.push_back(newState);
-  for (auto pre : nps->getPreCond()) {
+  for (auto pre : nps.getPreCond()) {
     addConstraint(*newState, replaceMap.visit(pre));
   }
-  terminateStateOnError(*newState, "apply error path summary", (enum TerminateReason)nps->getTerminateReason());
+  terminateStateOnError(*newState, "apply error path summary", (enum TerminateReason)nps.getTerminateReason());
 }
 
 ///

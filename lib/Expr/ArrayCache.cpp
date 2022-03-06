@@ -44,4 +44,9 @@ ArrayCache::CreateArray(const std::string &_name, uint64_t _size,
     return array;
   }
 }
+
+ArrayCache &getGlobalArrayCache() {
+  static ArrayCache ac;
+  return ac;
+}
 }

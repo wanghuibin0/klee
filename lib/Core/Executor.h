@@ -138,6 +138,9 @@ protected:
 
   SummaryManager *summaryManager;
 
+  /// Assumes ownership of the created array objects
+  ArrayCache &arrayCache;
+
   // ExternalDispatcher *externalDispatcher;
   std::shared_ptr<ExternalDispatcher> externalDispatcher;
   std::shared_ptr<TimingSolver> solver;
@@ -218,9 +221,6 @@ protected:
 
   /// Maximum time to allow for a single instruction.
   time::Span maxInstructionTime;
-
-  /// Assumes ownership of the created array objects
-  ArrayCache arrayCache;
 
   /// File to print executed instructions to
   std::shared_ptr<llvm::raw_ostream> debugInstFile;
@@ -574,10 +574,10 @@ public:
   ExecutionState *
   applyNormalPathSummaryToAState(ExecutionState &es,
                                  ExprReplaceVisitor2 &replaceMap,
-                                 NormalPathSummary *nps);
+                                 const NormalPathSummary &nps);
   void applyErrorPathSummaryToAState(ExecutionState &es,
                                      ExprReplaceVisitor2 &replaceMap,
-                                     ErrorPathSummary *eps);
+                                     const ErrorPathSummary &eps);
 };
 
 

@@ -230,14 +230,14 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
   bool isVoidReturn = (ri->getNumOperands() == 0);
 
   // construct a path summary
-  NormalPathSummary *ps = new NormalPathSummary();
-  ps->setPreCond(state.constraints);
-  ps->markVoidRet(isVoidReturn);
+  NormalPathSummary ps;
+  ps.setPreCond(state.constraints);
+  ps.markVoidRet(isVoidReturn);
 
   ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
   if (!isVoidReturn) {
     result = eval(ki, 0, state).value;
-    ps->setRetValue(result);
+    ps.setRetValue(result);
   }
 
   // TODO: globals should be collected beforehand
@@ -254,7 +254,7 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
     ref<Expr> gVal = os->read(0, w);
     llvm::outs() << "adding a modified global: ";
     gVal->dump();
-    ps->addGlobalsModified(g, gVal);
+    ps.addGlobalsModified(g, gVal);
   }
 
   summary->addNormalPathSummary(ps);
@@ -270,8 +270,7 @@ void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
   llvm::outs() << "terminate this state because error: "
                << TerminateReasonNames[termReason] << "\n";
   // construct an error path summary
-  ErrorPathSummary *eps =
-      new ErrorPathSummary(state.constraints, (enum ErrorReason)termReason);
+  ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
 
   // since the error path will be terminated immediately, we do not handle
   // globals for simplicity.

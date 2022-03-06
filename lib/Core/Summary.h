@@ -97,24 +97,16 @@ class Summary {
   ref<Expr> context;
   std::vector<ref<Expr>> args;
   std::map<llvm::GlobalValue *, ref<Expr>> globals;
-  std::vector<NormalPathSummary *> normalPathSummaries;
-  std::vector<ErrorPathSummary *> errorPathSummaries;
+  std::vector<NormalPathSummary> normalPathSummaries;
+  std::vector<ErrorPathSummary> errorPathSummaries;
 
 public:
   Summary(llvm::Function *f) : function(f) {}
-  ~Summary() {
-    for (auto &&np : normalPathSummaries) {
-      delete np;
-    }
-    for (auto &&ep : errorPathSummaries) {
-      delete ep;
-    }
-  }
 
-  void addNormalPathSummary(NormalPathSummary *ps) {
+  void addNormalPathSummary(const NormalPathSummary ps) {
     normalPathSummaries.push_back(ps);
   }
-  void addErrorPathSummary(ErrorPathSummary *ps) {
+  void addErrorPathSummary(const ErrorPathSummary &ps) {
     errorPathSummaries.push_back(ps);
   }
   void addContext(ConstraintSet &c) {
@@ -130,10 +122,10 @@ public:
   llvm::Function *getFunction() const { return function; }
   ref<Expr> getContext() const { return context; }
   std::vector<ref<Expr>> getFormalArgs() const { return args; }
-  std::vector<NormalPathSummary *> getNormalPathSummaries() const {
+  std::vector<NormalPathSummary> getNormalPathSummaries() const {
     return normalPathSummaries;
   }
-  const std::vector<ErrorPathSummary *> &getErrorPathSummaries() const {
+  const std::vector<ErrorPathSummary> &getErrorPathSummaries() const {
     return errorPathSummaries;
   }
   const std::map<llvm::GlobalValue *, ref<Expr>> &getFormalGlobals() const {
@@ -158,10 +150,10 @@ public:
     }
 
     for (auto nps : normalPathSummaries) {
-      nps->dump();
+      nps.dump();
     }
     for (auto eps : errorPathSummaries) {
-      eps->dump();
+      eps.dump();
     }
   }
 };
