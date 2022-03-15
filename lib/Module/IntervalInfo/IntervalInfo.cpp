@@ -52,17 +52,27 @@ void IntervalInfoPass::initializeEntryInfo(Function &f, BasicBlock &entry) {
       getGlobalEnvMap().getEnv(nullptr, &entry).set(&arg, Interval::Top());
     }
   }
+
+  // set global variables
+  auto gvRange = f.getParent()->global_values();
+  for (auto &&gv : gvRange) {
+    if (llvm::GlobalVariable *gva = llvm::dyn_cast<GlobalVariable>(&gv)) {
+      if (gva->hasPrivateLinkage()) continue;
+      getGlobalEnvMap().getEnv(nullptr, &entry).set(gva, Interval::Top());
+    }
+    /* getGlobalEnvMap().getEnv(nullptr, &entry).set(&gv, Interval::Top()); */
+  }
 }
 
 bool IntervalInfoPass::runOnFunction(Function &f) {
-  llvm::outs() << "this is the start of loop info computing\n";
-  outs() << f;
+  MY_KLEE_DEBUG( llvm::outs() << "this is the start of loop info computing\n" );
+  MY_KLEE_DEBUG( outs() << f );
   llvm::FunctionAnalysisManager FAM;
   FAM.registerPass([&] { return LoopAnalysis(); });
   FAM.registerPass([&] { return DominatorTreeAnalysis(); });
   llvm::LoopInfo LI{std::move(FAM.getResult<LoopAnalysis>(f))};
-  LI.print(llvm::outs());
-  llvm::outs() << "this is the end of loop info computing\n";
+  MY_KLEE_DEBUG( LI.print(llvm::outs()) );
+  MY_KLEE_DEBUG( llvm::outs() << "this is the end of loop info computing\n" );
 
   MY_KLEE_DEBUG(llvm::outs()
                 << "computing interval info for " << f.getName() << "\n");
@@ -109,20 +119,20 @@ IntervalCtxPass::IntervalCtxPass() : llvm::ModulePass(ID) {}
 
 bool IntervalCtxPass::runOnModule(llvm::Module &M) {
   // first compute loop info
-  outs() << M;
+  MY_KLEE_DEBUG(outs() << M);
   llvm::FunctionAnalysisManager FAM;
   FAM.registerPass([&] { return LoopAnalysis(); });
   FAM.registerPass([&] { return DominatorTreeAnalysis(); });
   for (auto &&f : M) {
-    outs() << f;
+    MY_KLEE_DEBUG( outs() << f );
     if (f.isIntrinsic() || f.empty()) {
       continue;
     }
-    llvm::outs() << "this is the start of loop info computing\n";
+    MY_KLEE_DEBUG( llvm::outs() << "this is the start of loop info computing\n" );
     std::unique_ptr<LoopInfo> li(
         new LoopInfo(std::move(FAM.getResult<LoopAnalysis>(f))));
     loopInfos.insert({&f, std::move(li)});
-    llvm::outs() << "this is the end of loop info computing\n";
+    MY_KLEE_DEBUG( llvm::outs() << "this is the end of loop info computing\n" );
   }
 
   // compute call site map
@@ -174,7 +184,7 @@ Env IntervalCtxPass::getArgsEnv(llvm::CallInst *ci) {
 
   Transfer trans(BB, getGlobalEnvMap(), *loopInfos[f]);
   Env callingEnv = trans.executeToInst(ci);
-  callingEnv.dump(outs());
+  MY_KLEE_DEBUG( callingEnv.dump(outs()) );
   if (callingEnv.empty()) {
     return Env();
   }
@@ -184,19 +194,20 @@ Env IntervalCtxPass::getArgsEnv(llvm::CallInst *ci) {
   auto i = 0;
   auto it = called->arg_begin();
   for (; it != called->arg_end(); ++i, ++it) {
+    llvm::Value *fa = &*it;              // formal arg
     llvm::Value *aa = ci->getOperand(i); // actual arg
-    MY_KLEE_DEBUG(outs() << "actual value: " << *aa << "\n");
-    if (llvm::isa<ConstantInt>(aa)) {
-      long v = llvm::cast<ConstantInt>(aa)->getSExtValue();
-      Interval i(v, v);
-      llvm::Value *fa = it;
-      res.set(fa, i);
-    } else {
-      MY_KLEE_DEBUG(callingEnv.dump(outs()));
-      assert(callingEnv.hasValue(aa));
-      Interval i = callingEnv.lookup(aa);
-      llvm::Value *fa = &*it; // formal arg
-      res.set(fa, i);
+    MY_KLEE_DEBUG(outs() << "formal arg: " << *fa << "\n");
+    MY_KLEE_DEBUG(outs() << "actual arg: " << *aa << "\n");
+    if (fa->getType()->isIntegerTy()) {
+      if (llvm::isa<ConstantInt>(aa)) {
+        long v = llvm::cast<ConstantInt>(aa)->getSExtValue();
+        Interval i(v, v);
+        res.set(fa, i);
+      } else {
+        assert(callingEnv.hasValue(aa));
+        Interval i = callingEnv.lookup(aa);
+        res.set(fa, i);
+      }
     }
   }
 

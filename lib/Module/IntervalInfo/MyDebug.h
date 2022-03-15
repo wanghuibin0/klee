@@ -1,4 +1,4 @@
-#define MY_DEBUG 1
+#define MY_DEBUG 0
 
 #if MY_DEBUG
 #define MY_KLEE_DEBUG(X) do { X; } while (0);

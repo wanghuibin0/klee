@@ -10,6 +10,7 @@
 #include "klee/Support/Debug.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -46,9 +47,9 @@ public:
 
   Env executeToInst(llvm::Instruction *inst) {
     assert(inst->getParent() == bb && "inst must be in bb");
-    gEnvMap.dump();
-    llvm::outs() << "bb: " << bb << "\n" << *bb;
-    internalEnv.dump(llvm::outs());
+    MY_KLEE_DEBUG( gEnvMap.dump() );
+    MY_KLEE_DEBUG( llvm::outs() << "bb: " << bb << "\n" << *bb );
+    MY_KLEE_DEBUG( internalEnv.dump(llvm::outs()) );
 
     // env of entry block is always empty, so it should be excluded
     bool isEntryBlock = (bb == &bb->getParent()->getEntryBlock());
@@ -101,7 +102,7 @@ private:
 
     Env &latchEnv = gEnvMap.getEnv(latchBB, bb);
     Env &preEnv = gEnvMap.getEnv(preHeader, bb);
-    if (latchEnv.empty()) {
+    if (!preEnv.isSubsetOf(latchEnv)) {
       internalEnv = preEnv;
     } else {
       internalEnv = preEnv || latchEnv; // widening
@@ -159,10 +160,15 @@ private:
   void executeInstruction(llvm::Instruction *inst) {
     MY_KLEE_DEBUG(llvm::outs() << "execute instruction:\n");
     MY_KLEE_DEBUG(llvm::outs() << *inst << "\n");
+    llvm::Type *type = inst->getType();
+    MY_KLEE_DEBUG( llvm::outs() << "inst type = " << *type << "\n" );
     if (llvm::isa<llvm::StoreInst>(inst)) {
       llvm::StoreInst *i = llvm::cast<llvm::StoreInst>(inst);
       llvm::Value *v = i->getValueOperand();
       llvm::Value *p = i->getPointerOperand();
+      if (!v->getType()->isIntegerTy()) {
+        return;
+      }
       if (auto *c = llvm::dyn_cast<llvm::ConstantInt>(v)) {
         auto value = c->getSExtValue();
         Interval i(value, value);
@@ -173,17 +179,24 @@ private:
       }
     } else if (llvm::isa<llvm::LoadInst>(inst)) {
       llvm::LoadInst *i = llvm::cast<llvm::LoadInst>(inst);
+      if (!i->getType()->isIntegerTy()) {
+        return;
+      }
       llvm::Value *p = i->getPointerOperand();
-      assert(internalEnv.hasValue(p));
-      auto v = internalEnv.lookup(p);
-      internalEnv.set(inst, v);
-    } else if (llvm::isa<llvm::BitCastInst>(inst)) {
+      if (internalEnv.hasValue(p)) {
+        auto v = internalEnv.lookup(p);
+        internalEnv.set(inst, v);
+      } else {
+        internalEnv.set(inst, Interval::Top());
+      }
+    } /*else if (llvm::isa<llvm::BitCastInst>(inst)) {
       llvm::BitCastInst *i = llvm::cast<llvm::BitCastInst>(inst);
       llvm::Value *src = i->getOperand(0);
       assert(internalEnv.hasValue(src));
       Interval iv = internalEnv.lookup(src);
       internalEnv.set(inst, iv);
-    } else if (llvm::isa<llvm::BinaryOperator>(inst)) {
+    }*/
+    else if (llvm::isa<llvm::BinaryOperator>(inst)) {
       executeBinaryOp(llvm::cast<llvm::BinaryOperator>(inst));
     } else if (llvm::isa<llvm::CmpInst>(inst)) {
       executeCmpInst(llvm::cast<llvm::CmpInst>(inst));
@@ -202,18 +215,27 @@ private:
 
     auto opcode = binst->getOpcode();
     Interval i;
-    if (c1 && c2) {
-      auto v1 = c1->getSExtValue();
-      auto v2 = c2->getSExtValue();
-      i = apply(opcode, Interval(v1, v1), Interval(v2, v2));
-    } else if (c1 && !c2) {
-      auto v1 = c1->getSExtValue();
-      i = apply(opcode, Interval(v1, v1), internalEnv.lookup(op2));
-    } else if (!c1 && c2) {
-      auto v2 = c2->getSExtValue();
-      i = apply(opcode, internalEnv.lookup(op1), Interval(v2, v2));
-    } else {
-      i = apply(opcode, internalEnv.lookup(op1), internalEnv.lookup(op2));
+    switch (opcode) {
+    case llvm::Instruction::Add:
+    case llvm::Instruction::Sub:
+    case llvm::Instruction::Mul:
+    case llvm::Instruction::SDiv:
+      if (c1 && c2) {
+        auto v1 = c1->getSExtValue();
+        auto v2 = c2->getSExtValue();
+        i = apply(opcode, Interval(v1, v1), Interval(v2, v2));
+      } else if (c1 && !c2) {
+        auto v1 = c1->getSExtValue();
+        i = apply(opcode, Interval(v1, v1), internalEnv.lookup(op2));
+      } else if (!c1 && c2) {
+        auto v2 = c2->getSExtValue();
+        i = apply(opcode, internalEnv.lookup(op1), Interval(v2, v2));
+      } else {
+        i = apply(opcode, internalEnv.lookup(op1), internalEnv.lookup(op2));
+      }
+      break;
+    default:
+      i = Interval::Top();
     }
     internalEnv.set(binst, i);
   }
@@ -242,15 +264,19 @@ private:
     for (auto &&i : *bb) {
       if (llvm::isa<llvm::LoadInst>(&i)) {
         llvm::Value *ptr = llvm::cast<llvm::LoadInst>(&i)->getPointerOperand();
+        if (i.getType()->isIntegerTy())
+          continue;
         eqrels.processLoad(ptr, &i);
       } else if (llvm::isa<llvm::StoreInst>(&i)) {
         llvm::Value *ptr = llvm::cast<llvm::StoreInst>(&i)->getPointerOperand();
         llvm::Value *val = llvm::cast<llvm::StoreInst>(&i)->getValueOperand();
+        if (val->getType()->isIntegerTy())
+          continue;
         eqrels.processStore(ptr, val);
-      } else if (llvm::isa<llvm::BitCastInst>(&i)) {
-        llvm::Value *ptr = llvm::cast<llvm::BitCastInst>(&i)->getOperand(0);
-        eqrels.processBitCast(ptr, &i);
-      }
+      } /* else if (llvm::isa<llvm::BitCastInst>(&i)) {
+         llvm::Value *ptr = llvm::cast<llvm::BitCastInst>(&i)->getOperand(0);
+         eqrels.processBitCast(ptr, &i);
+       }*/
     }
   }
 
@@ -259,6 +285,10 @@ private:
     llvm::ConstantInt *c1 = llvm::dyn_cast<llvm::ConstantInt>(op1);
     llvm::Value *op2 = binst->getOperand(1);
     llvm::ConstantInt *c2 = llvm::dyn_cast<llvm::ConstantInt>(op2);
+
+    bool isRegReg =
+        !llvm::isa<llvm::Constant>(op1) && !llvm::isa<llvm::Constant>(op2) &&
+        op1->getType()->isIntegerTy() && op2->getType()->isIntegerTy();
 
     llvm::TerminatorInst *ti = bb->getTerminator();
     if (!llvm::isa<llvm::BranchInst>(ti))
@@ -278,12 +308,16 @@ private:
       applyCmpValReg(p, c1, op2, bbt, bbf, eqrels);
     } else if (!c1 && c2) {
       applyCmpRegVal(p, op1, c2, bbt, bbf, eqrels);
-    } else if (!c1 && !c2) {
+    } else if (isRegReg) {
       applyCmpRegReg(p, op1, op2, bbt, bbf, eqrels);
     } else {
-      assert(0);
+      applyCmpOthers(p, op1, op2, bbt, bbf, eqrels);
     }
   }
+
+  void applyCmpOthers(llvm::CmpInst::Predicate p, llvm::Value *c1,
+                      llvm::Value *op2, llvm::BasicBlock *bbt,
+                      llvm::BasicBlock *bbf, EqRels &eqrels) {}
 
   void applyCmpValReg(llvm::CmpInst::Predicate p, llvm::ConstantInt *c1,
                       llvm::Value *op2, llvm::BasicBlock *bbt,
@@ -293,16 +327,32 @@ private:
       applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SGT, op2, c1, bbt, bbf,
                      eqrels);
       break;
+    case llvm::CmpInst::Predicate::ICMP_ULT:
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_UGT, op2, c1, bbt, bbf,
+                     eqrels);
+      break;
     case llvm::CmpInst::Predicate::ICMP_SLE:
       applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SGE, op2, c1, bbt, bbf,
+                     eqrels);
+      break;
+    case llvm::CmpInst::Predicate::ICMP_ULE:
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_UGE, op2, c1, bbt, bbf,
                      eqrels);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGT:
       applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SLT, op2, c1, bbt, bbf,
                      eqrels);
       break;
+    case llvm::CmpInst::Predicate::ICMP_UGT:
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_ULT, op2, c1, bbt, bbf,
+                     eqrels);
+      break;
     case llvm::CmpInst::Predicate::ICMP_SGE:
       applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_SLE, op2, c1, bbt, bbf,
+                     eqrels);
+      break;
+    case llvm::CmpInst::Predicate::ICMP_UGE:
+      applyCmpRegVal(llvm::CmpInst::Predicate::ICMP_ULE, op2, c1, bbt, bbf,
                      eqrels);
       break;
     case llvm::CmpInst::Predicate::ICMP_EQ:
@@ -331,17 +381,33 @@ private:
       ipredicateT = Interval(MIN, value2 - 1);
       ipredicateF = Interval(value2, MAX);
       break;
+    case llvm::CmpInst::Predicate::ICMP_ULT:
+      ipredicateT = Interval(0, value2 - 1);
+      ipredicateF = Interval(value2, MAX);
+      break;
     case llvm::CmpInst::Predicate::ICMP_SLE:
       ipredicateT = Interval(MIN, value2);
+      ipredicateF = Interval(value2 + 1, MAX);
+      break;
+    case llvm::CmpInst::Predicate::ICMP_ULE:
+      ipredicateT = Interval(0, value2);
       ipredicateF = Interval(value2 + 1, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGT:
       ipredicateT = Interval(value2 + 1, MAX);
       ipredicateF = Interval(MIN, value2);
       break;
+    case llvm::CmpInst::Predicate::ICMP_UGT:
+      ipredicateT = Interval(value2 + 1, MAX);
+      ipredicateF = Interval(0, value2);
+      break;
     case llvm::CmpInst::Predicate::ICMP_SGE:
       ipredicateT = Interval(value2, MAX);
       ipredicateF = Interval(MIN, value2 - 1);
+      break;
+    case llvm::CmpInst::Predicate::ICMP_UGE:
+      ipredicateT = Interval(value2, MAX);
+      ipredicateF = Interval(0, value2 - 1);
       break;
     case llvm::CmpInst::Predicate::ICMP_EQ:
       ipredicateT = Interval(value2, value2);
@@ -367,7 +433,8 @@ private:
     succEnvs.insert(std::make_pair(bbf, envF));
   }
 
-  void genEnvsAtCond(Env &envT, Env &envF, EqRels &eqrels, llvm::Value *condOp, Interval predT, Interval predF) {
+  void genEnvsAtCond(Env &envT, Env &envF, EqRels &eqrels, llvm::Value *condOp,
+                     Interval predT, Interval predF) {
     std::vector<Pointer> &vecP = eqrels.getRelatedPointers(condOp);
     for (auto &&p : vecP) {
       std::vector<VRegs> &vecV = eqrels.getRelatedVRegs(p);
@@ -395,17 +462,33 @@ private:
       ipredicateT = Interval(MIN, valueLower - 1);
       ipredicateF = Interval(valueUpper, MAX);
       break;
+    case llvm::CmpInst::Predicate::ICMP_ULT:
+      ipredicateT = Interval(0, valueLower - 1);
+      ipredicateF = Interval(valueUpper, MAX);
+      break;
     case llvm::CmpInst::Predicate::ICMP_SLE:
       ipredicateT = Interval(MIN, valueLower);
+      ipredicateF = Interval(valueUpper + 1, MAX);
+      break;
+    case llvm::CmpInst::Predicate::ICMP_ULE:
+      ipredicateT = Interval(0, valueLower);
       ipredicateF = Interval(valueUpper + 1, MAX);
       break;
     case llvm::CmpInst::Predicate::ICMP_SGT:
       ipredicateT = Interval(valueUpper + 1, MAX);
       ipredicateF = Interval(MIN, valueLower);
       break;
+    case llvm::CmpInst::Predicate::ICMP_UGT:
+      ipredicateT = Interval(valueUpper + 1, MAX);
+      ipredicateF = Interval(0, valueLower);
+      break;
     case llvm::CmpInst::Predicate::ICMP_SGE:
       ipredicateT = Interval(valueUpper, MAX);
       ipredicateF = Interval(MIN, valueLower - 1);
+      break;
+    case llvm::CmpInst::Predicate::ICMP_UGE:
+      ipredicateT = Interval(valueUpper, MAX);
+      ipredicateF = Interval(0, valueLower - 1);
       break;
     case llvm::CmpInst::Predicate::ICMP_EQ:
       ipredicateT = Interval(valueLower, valueUpper);
@@ -433,10 +516,12 @@ private:
     trackBlockEqrels(eqrels);
 
     llvm::Function *f = cinst->getCalledFunction();
-    llvm::StringRef name = f->getName();
-    if (name == "klee_make_symbolic") {
-      llvm::Value *firstArg = cinst->getArgOperand(0);
-      internalEnv.set(firstArg, Interval::Top());
+    if (f) {
+      llvm::StringRef name = f->getName();
+      if (name == "klee_make_symbolic") {
+        llvm::Value *firstArg = cinst->getArgOperand(0);
+        internalEnv.set(firstArg, Interval::Top());
+      }
     }
 
     if (cinst->getType()->isIntegerTy() || cinst->getType()->isPointerTy()) {

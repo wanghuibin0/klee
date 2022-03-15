@@ -5,6 +5,7 @@
 #include "klee/ADT/Ref.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/raw_ostream.h"
+#include "MyDebug.h"
 
 #include <map>
 
@@ -18,8 +19,9 @@ public:
   ~Env() = default;
   // static Env Top() { return Env(); }
   // static Env Bot() { return Env(); }
-  bool empty() { return m.empty(); }
+  bool empty() const { return m.empty(); }
   bool hasValue(llvm::Value *v) const {
+    MY_KLEE_DEBUG( llvm::outs() << "*v = " << *v << "\n" );
     auto it = m.find(v);
     return it != m.end();
   }
@@ -48,6 +50,21 @@ public:
   iterator begin() { return m.begin(); }
   iterator end() { return m.end(); }
 
+  bool isSubsetOf(const Env &r) {
+    if (this->empty()) {
+      return true;
+    } else if (r.empty()) {
+      return false;
+    } else {
+      for (auto &&it : m) {
+        if (!r.hasValue(it.first)) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+
   Env operator|(const Env &r) {
     Env newEnv{r};
     for (auto &&it : m) {
@@ -69,7 +86,7 @@ public:
     Env newEnv{r};
     for (auto &&it : m) {
       llvm::Value *v = it.first;
-      llvm::outs() << "in operator widening: v = " << *v << "\n";
+      MY_KLEE_DEBUG( llvm::outs() << "in operator widening: v = " << *v << "\n" );
       Interval i = it.second;
       assert(r.hasValue(v) &&
              "env.h:wideing between Env with different values");

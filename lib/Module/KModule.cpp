@@ -300,9 +300,14 @@ void KModule::optimiseAndPrepare(
   pm3.add(createScalarizerPass());
   pm3.add(new PhiCleanerPass());
   pm3.add(new FunctionAliasPass());
-  pm3.add(new IntervalInfoPass());
-  pm3.add(new IntervalCtxPass());
   pm3.run(*module);
+
+  //outs() << "print module before interval info\n" << *module;
+  legacy::PassManager pm4;
+  pm4.add(new IntervalInfoPass());
+  pm4.add(new IntervalCtxPass());
+  pm4.run(*module);
+  exit(0);
 }
 
 void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
