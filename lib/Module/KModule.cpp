@@ -307,7 +307,7 @@ void KModule::optimiseAndPrepare(
   pm4.add(new IntervalInfoPass());
   pm4.add(new IntervalCtxPass());
   pm4.run(*module);
-  exit(0);
+  //exit(0);
 }
 
 void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {

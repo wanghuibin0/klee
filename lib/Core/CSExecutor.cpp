@@ -82,6 +82,10 @@ void CTXCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
   auto i = 0;
   auto it = f->arg_begin();
   for (; it != f->arg_end(); ++it, ++i) {
+    Type *ty = it->getType();
+    if (!ty->isIntegerTy()) {
+      continue;
+    }
     assert(env.hasValue(it) && "interval info for arg must be in env");
     Interval interval = env.lookup(it);
     if (interval.isTop()) {
