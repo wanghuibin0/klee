@@ -391,7 +391,7 @@ ExecutionState& MergingSearcher::selectState() {
       return *es;
     } else {
       if (DebugLogIncompleteMerge){
-        llvm::errs() << "Preemptively releasing states\n";
+        llvm::outs() << "Preemptively releasing states\n";
       }
       // If no state can be prioritized, they all exceeded the amount of time we
       // are willing to wait for them. Release the states that already arrived at close_merge.

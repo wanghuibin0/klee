@@ -37,19 +37,19 @@ public:
   }
 
   void dump() const {
-    llvm::outs() << "this is a normal path summary\n";
-    llvm::outs() << "pre conditions are:\n";
+    llvm::errs() << "this is a normal path summary\n";
+    llvm::errs() << "pre conditions are:\n";
     for (auto x : preCond) {
       x->dump();
     }
-    llvm::outs() << "is void return? " << isVoidRet << "\n";
+    llvm::errs() << "is void return? " << isVoidRet << "\n";
     if (!isVoidRet) {
-      llvm::outs() << "retVal = ";
+      llvm::errs() << "retVal = ";
       retVal->dump();
     }
-    llvm::outs() << "globals modified:\n";
+    llvm::errs() << "globals modified:\n";
     for (auto x : globalsMod) {
-      llvm::outs() << x.first->getName() << ": ";
+      llvm::errs() << x.first->getName() << ": ";
       x.second->dump();
     }
   }
@@ -83,12 +83,12 @@ public:
   ConstraintSet getPreCond() const { return preCond; }
   ErrorReason getTerminateReason() const { return tr; }
   void dump() {
-    llvm::outs() << "this is an error path summary\n";
-    llvm::outs() << "pre conditions are:\n";
+    llvm::errs() << "this is an error path summary\n";
+    llvm::errs() << "pre conditions are:\n";
     for (auto x : preCond) {
       x->dump();
     }
-    llvm::outs() << "terminate reason is: " << tr << "\n";
+    llvm::errs() << "terminate reason is: " << tr << "\n";
   }
 };
 
@@ -96,7 +96,7 @@ class Summary {
   llvm::Function *function;
   ref<Expr> context;
   std::vector<ref<Expr>> args;
-  std::map<llvm::GlobalValue *, ref<Expr>> globals;
+  std::map<const llvm::GlobalValue *, ref<Expr>> globals;
   std::vector<NormalPathSummary> normalPathSummaries;
   std::vector<ErrorPathSummary> errorPathSummaries;
 
@@ -128,25 +128,28 @@ public:
   const std::vector<ErrorPathSummary> &getErrorPathSummaries() const {
     return errorPathSummaries;
   }
-  const std::map<llvm::GlobalValue *, ref<Expr>> &getFormalGlobals() const {
+  const std::map<const llvm::GlobalValue *, ref<Expr>> &getFormalGlobals() const {
     return globals;
+  }
+  void addFormalGlobals(const llvm::GlobalValue *gv, ref<Expr> e) {
+    globals.insert(std::make_pair(gv, e));
   }
 
   void dump() {
-    llvm::outs() << "function name: " << function->getName() << "\n";
-    llvm::outs() << "context is: ";
+    llvm::errs() << "function name: " << function->getName() << "\n";
+    llvm::errs() << "context is: ";
     context->dump();
-    llvm::outs() << "arguments are: \n";
+    llvm::errs() << "arguments are: \n";
     for (auto a : args) {
       a->dump();
-      llvm::outs() << "; ";
+      llvm::errs() << "; ";
     }
-    llvm::outs() << "globals: \n";
+    llvm::errs() << "globals: \n";
     for (auto g : globals) {
-      llvm::outs() << "key: " << g.first->getName() << "\n";
-      llvm::outs() << "val: ";
+      llvm::errs() << "key: " << g.first->getName() << "\n";
+      llvm::errs() << "val: ";
       g.second->dump();
-      llvm::outs() << "; ";
+      llvm::errs() << "; ";
     }
 
     for (auto nps : normalPathSummaries) {

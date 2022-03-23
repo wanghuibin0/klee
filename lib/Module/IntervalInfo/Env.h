@@ -21,7 +21,7 @@ public:
   // static Env Bot() { return Env(); }
   bool empty() const { return m.empty(); }
   bool hasValue(llvm::Value *v) const {
-    MY_KLEE_DEBUG( llvm::outs() << "*v = " << *v << "\n" );
+    //MY_KLEE_DEBUG( llvm::errs() << "*v = " << *v << "\n" );
     auto it = m.find(v);
     return it != m.end();
   }
@@ -86,7 +86,7 @@ public:
     Env newEnv{r};
     for (auto &&it : m) {
       llvm::Value *v = it.first;
-      MY_KLEE_DEBUG( llvm::outs() << "in operator widening: v = " << *v << "\n" );
+      MY_KLEE_DEBUG( llvm::errs() << "in operator widening: v = " << *v << "\n" );
       Interval i = it.second;
       assert(r.hasValue(v) &&
              "env.h:wideing between Env with different values");

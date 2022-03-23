@@ -38,7 +38,7 @@ void CTXCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
   // bindModuleConstants should be called after initializeGlobals
-  bindModuleConstants();
+  //bindModuleConstants();
 
   buildConstraintFromStaticContext(es, func);
 
@@ -52,14 +52,14 @@ void CTXCSExecutor::run() {
 
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
-    llvm::outs() << "new round, current state is " << &state << "\n";
+    llvm::errs() << "new round, current state is " << &state << "\n";
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
     timers.invoke();
     updateStates(&state);
-    llvm::outs() << "after this round, remaining " << states.size()
+    llvm::errs() << "after this round, remaining " << states.size()
                  << " states.\n";
   }
 
@@ -77,7 +77,7 @@ void CTXCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
                                                      llvm::Function *f) {
   std::map<Function *, Env> &context = getGlobalEnvContext();
   Env &env = context[f];
-  env.dump(outs());
+  env.dump(errs());
 
   auto i = 0;
   auto it = f->arg_begin();
@@ -121,7 +121,7 @@ void CTXCSExecutor::initializeGlobals(ExecutionState &state) {
   allocateGlobalObjects(state);
   initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
-  //  llvm::outs() << "after initialize globals, dump the address space\n";
+  //  llvm::errs() << "after initialize globals, dump the address space\n";
   //  state.addressSpace.dump();
 }
 
@@ -140,9 +140,12 @@ void CTXCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
       globalsMod.push_back(&v);
-      llvm::outs() << "make a global variable symbolic: " << name << "\n";
-      llvm::outs() << "the memory object is: \n";
+      llvm::errs() << "make a global variable symbolic: " << name << "\n";
+      llvm::errs() << "the memory object is: \n";
       mo->dump();
+      const ObjectState *os = state->addressSpace.findObject(mo);
+      Expr::Width width = getWidthForLLVMType(v.getType()->getElementType());
+      summary->addFormalGlobals(&v, os->read(0, width));
     }
   }
 }
@@ -157,7 +160,7 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
     Expr::Width w = 0;
 
     if (isa<llvm::PointerType>(argTy)) {
-      llvm::outs()
+      llvm::errs()
           << "in CTXCSExecutor::makeArgsSymbolic: function arg is a pointer\n";
       w = Context::get().getPointerWidth();
     } else {
@@ -181,14 +184,14 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
-      llvm::outs() << "this arg " << name
+      llvm::errs() << "this arg " << name
                    << " is a pointer, allocate some memory for its pointee\n";
     } else {
-      llvm::outs() << "CTXCSExecutor::makeArgsSymbolic: creating new symbolic "
+      llvm::errs() << "CTXCSExecutor::makeArgsSymbolic: creating new symbolic "
                       "array with size "
                    << w << "\n";
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
-      llvm::outs() << "the arg name is " << name << "\n";
+      llvm::errs() << "the arg name is " << name << "\n";
       const Array *array =
           arrayCache.CreateArray(name, Expr::getMinBytesForWidth(w));
       res = Expr::createTempRead(array, w);
@@ -256,7 +259,7 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
     MemoryObject *mo = globalObjects[g];
     const ObjectState *os = state.addressSpace.findObject(mo);
     ref<Expr> gVal = os->read(0, w);
-    llvm::outs() << "adding a modified global: ";
+    llvm::errs() << "adding a modified global: ";
     gVal->dump();
     ps.addGlobalsModified(g, gVal);
   }
@@ -271,7 +274,7 @@ void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
                                           enum TerminateReason termReason,
                                           const char *suffix,
                                           const llvm::Twine &info) {
-  llvm::outs() << "terminate this state because error: "
+  llvm::errs() << "terminate this state because error: "
                << TerminateReasonNames[termReason] << "\n";
   // construct an error path summary
   ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
@@ -293,12 +296,12 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   ++instCnter;
 
   Instruction *inst = ki->inst;
-  outs() << "this instruction: " << *inst << "\n";
-  outs() << "counter is: " << instCnter << "\n";
+  errs() << "this instruction: " << *inst << "\n";
+  //errs() << "counter is: " << instCnter << "\n";
 
   if (instCnter >= MaxLoopUnroll) {
-    outs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
-    outs() << "reach max loop unroll\n";
+    errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
+    errs() << "reach max loop unroll\n";
     terminateState(state);
   }
 

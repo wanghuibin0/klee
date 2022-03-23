@@ -266,10 +266,14 @@ public:
 
   void addConstraint(ref<Expr> e);
 
-  void dumpConstraint();
+  void dumpConstraint() const;
 
   bool merge(const ExecutionState &b);
   void dumpStack(llvm::raw_ostream &out) const;
+
+  void dumpAddressSpace() const;
+
+  void dump() const;
 
   std::uint32_t getID() const { return id; };
   void setID() { id = nextID++; };

@@ -25,7 +25,7 @@ namespace klee {
   template<class T> class ref;
 
   typedef std::pair<const MemoryObject*, const ObjectState*> ObjectPair;
-  typedef std::vector<ObjectPair> ResolutionList;  
+  typedef std::vector<ObjectPair> ResolutionList;
 
   /// Function object ordering MemoryObject's by address.
   struct MemoryObjectLT {
@@ -71,19 +71,19 @@ namespace klee {
 
     /// Resolve address to an ObjectPair in result.
     /// \return true iff an object was found.
-    bool resolveOne(const ref<ConstantExpr> &address, 
+    bool resolveOne(const ref<ConstantExpr> &address,
                     ObjectPair &result) const;
 
     /// Resolve address to an ObjectPair in result.
     ///
     /// \param state The state this address space is part of.
-    /// \param solver A solver used to determine possible 
+    /// \param solver A solver used to determine possible
     ///               locations of the \a address.
     /// \param address The address to search for.
-    /// \param[out] result An ObjectPair this address can resolve to 
+    /// \param[out] result An ObjectPair this address can resolve to
     ///               (when returning true).
     /// \return true iff an object was found at \a address.
-    bool resolveOne(ExecutionState &state, 
+    bool resolveOne(ExecutionState &state,
                     TimingSolver *solver,
                     ref<Expr> address,
                     ObjectPair &result,
@@ -98,7 +98,7 @@ namespace klee {
     bool resolve(ExecutionState &state,
                  TimingSolver *solver,
                  ref<Expr> p,
-                 ResolutionList &rl, 
+                 ResolutionList &rl,
                  unsigned maxResolutions=0,
                  time::Span timeout=time::Span()) const;
 
@@ -135,7 +135,7 @@ namespace klee {
     /// potentially copied) if the memory values are different from
     /// the current concrete values.
     ///
-    /// \retval true The copy succeeded. 
+    /// \retval true The copy succeeded.
     /// \retval false The copy failed because a read-only object was modified.
     bool copyInConcretes();
 
@@ -149,6 +149,7 @@ namespace klee {
                         uint64_t src_address);
     void dump() const {
       for (auto x : objects) {
+        x.first->dump();
         x.second->print();
       }
     }

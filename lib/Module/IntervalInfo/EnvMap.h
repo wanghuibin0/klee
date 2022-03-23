@@ -30,9 +30,9 @@ public:
   }
   void dump() {
     for (auto &&it : envMap) {
-      llvm::outs() << "[<" << it.first.first << "," << it.first.second << ">,";
-      it.second.dump(llvm::outs());
-      llvm::outs() << "]\n";
+      llvm::errs() << "[<" << it.first.first << "," << it.first.second << ">,";
+      it.second.dump(llvm::errs());
+      llvm::errs() << "]\n";
     }
   }
 };

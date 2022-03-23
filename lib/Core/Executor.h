@@ -149,8 +149,7 @@ protected:
   // StatsTracker *statsTracker;
   std::shared_ptr<StatsTracker> statsTracker;
   TreeStreamWriter *pathWriter, *symPathWriter;
-  // SpecialFunctionHandler *specialFunctionHandler;
-  std::shared_ptr<SpecialFunctionHandler> specialFunctionHandler;
+  SpecialFunctionHandler *specialFunctionHandler;
   TimerGroup &timers;
   std::unique_ptr<PTree> processTree;
 

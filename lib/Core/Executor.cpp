@@ -35,9 +35,9 @@
 #include "klee/Expr/Assignment.h"
 #include "klee/Expr/Expr.h"
 #include "klee/Expr/ExprPPrinter.h"
+#include "klee/Expr/ExprReplaceVisitor.h"
 #include "klee/Expr/ExprSMTLIBPrinter.h"
 #include "klee/Expr/ExprUtil.h"
-#include "klee/Expr/ExprReplaceVisitor.h"
 #include "klee/Module/Cell.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KInstruction.h"
@@ -430,11 +430,10 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
     : Interpreter(opts), interpreterHandler(ih), searcher(0), summaryManager(0),
       arrayCache(getGlobalArrayCache()),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
-      pathWriter(0), symPathWriter(0),
-      specialFunctionHandler(0), timers(theTimerGroup),
-      replayKTest(0), replayPath(0), usingSeeds(0), atMemoryLimit(false),
-      inhibitForking(false), haltExecution(false), ivcEnabled(false),
-      debugLogBuffer(debugBufferString) {
+      pathWriter(0), symPathWriter(0), specialFunctionHandler(0),
+      timers(theTimerGroup), replayKTest(0), replayPath(0), usingSeeds(0),
+      atMemoryLimit(false), inhibitForking(false), haltExecution(false),
+      ivcEnabled(false), debugLogBuffer(debugBufferString) {
 
   const time::Span maxTime{MaxTime};
   if (maxTime)
@@ -496,16 +495,18 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
 Executor::Executor(const Executor &e)
     : Interpreter(e.interpreterOpts), kmodule(e.kmodule),
       interpreterHandler(e.interpreterHandler), searcher(0),
-      summaryManager(e.summaryManager),
-      arrayCache(getGlobalArrayCache()),
+      summaryManager(e.summaryManager), arrayCache(getGlobalArrayCache()),
       externalDispatcher(e.externalDispatcher), solver(e.solver),
       memory(new MemoryManager(&arrayCache)), statsTracker(0), pathWriter(0),
       symPathWriter(0),
-      specialFunctionHandler(e.specialFunctionHandler), timers(e.timers),
+      specialFunctionHandler(new SpecialFunctionHandler(*this)),
+      timers(e.timers),
       /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
       atMemoryLimit(false), inhibitForking(false), haltExecution(false),
       ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout),
-      debugInstFile(0), debugLogBuffer(debugBufferString) {}
+      debugInstFile(0), debugLogBuffer(debugBufferString) {
+  specialFunctionHandler->bind();
+}
 
 llvm::Module *
 Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
@@ -537,8 +538,7 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 
   // Create a list of functions that should be preserved if used
   std::vector<const char *> preservedFunctions;
-  // specialFunctionHandler = new SpecialFunctionHandler(*this);
-  specialFunctionHandler.reset(new SpecialFunctionHandler(*this));
+  specialFunctionHandler = new SpecialFunctionHandler(*this);
   specialFunctionHandler->prepare(preservedFunctions);
 
   preservedFunctions.push_back(opts.EntryPoint.c_str());
@@ -579,7 +579,7 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 Executor::~Executor() {
   delete memory;
   // delete externalDispatcher;
-  // delete specialFunctionHandler;
+  delete specialFunctionHandler;
   // delete statsTracker;
   // delete solver;
 }
@@ -761,9 +761,10 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
     globalAddresses.emplace(&v, mo->getBaseExpr());
-    //llvm::errs() << "in Executor::allocateGlobalObjects, allocating a new memoryobject \n";
-    //mo->dump();
-    //llvm::errs() << "the coresponding variable is :" << v.getName() << "\n";
+    mo->setName(v.getName());
+    // llvm::errs() << "in Executor::allocateGlobalObjects, allocating a new
+    // memoryobject \n"; mo->dump(); llvm::errs() << "the coresponding variable
+    // is :" << v.getName() << "\n";
   }
 }
 
@@ -901,7 +902,8 @@ void Executor::branch(ExecutionState &state,
       ExecutionState *ns = es->branch();
       addedStates.push_back(ns);
       result.push_back(ns);
-      if (processTree) processTree->attach(es->ptreeNode, ns, es);
+      if (processTree)
+        processTree->attach(es->ptreeNode, ns, es);
     }
   }
 
@@ -1144,7 +1146,8 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
       }
     }
 
-    if (processTree) processTree->attach(current.ptreeNode, falseState, trueState);
+    if (processTree)
+      processTree->attach(current.ptreeNode, falseState, trueState);
 
     if (pathWriter) {
       // Need to update the pathOS.id field of falseState, otherwise the same id
@@ -1213,7 +1216,8 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
                                  ConstantExpr::alloc(1, Expr::Bool));
 }
 
-bool Executor::addConstraintMayFail(ExecutionState &state, ref<Expr> condition) {
+bool Executor::addConstraintMayFail(ExecutionState &state,
+                                    ref<Expr> condition) {
   llvm::errs() << "Executor::addConstraintMayFail: ";
   condition->dump();
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(condition)) {
@@ -1253,7 +1257,8 @@ bool Executor::addConstraintMayFail(ExecutionState &state, ref<Expr> condition) 
   return true;
 }
 
-void Executor::addConstraint(ExecutionState &state, const ConstraintSet &conditions) {
+void Executor::addConstraint(ExecutionState &state,
+                             const ConstraintSet &conditions) {
   for (auto x : conditions) {
     addConstraint(state, x);
   }
@@ -1708,8 +1713,8 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
   Summary *summary = sm->getSummary(state, f);
   if (summary && checkCompatible(state, *summary)) {
     // should prepare actual arguments before application.
-    llvm::outs() << "dumping summary before apply summary\n";
-    summary->dump();
+    llvm::errs() << "dumping summary before apply summary\n";
+    //summary->dump();
     applySummary(state, arguments, summary);
     llvm::errs() << "success: compositional execution for function "
                  << f->getName() << "\n";
@@ -1719,18 +1724,13 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
   return true;
 }
 
-void Executor::applySummary(ExecutionState &state, std::vector<ref<Expr>> &arguments, Summary *s) {
+void Executor::applySummary(ExecutionState &state,
+                            std::vector<ref<Expr>> &arguments, Summary *s) {
   applySummaryToAState(state, arguments, *s);
 }
 
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            std::vector<ref<Expr>> &arguments) {
-  static bool isCSEBegin = false;
-  auto name = f->getName();
-  if (name == "__klee_posix_wrapped_main") {
-    isCSEBegin = true;
-  }
-
   Instruction *i = ki->inst;
   if (isa_and_nonnull<DbgInfoIntrinsic>(i))
     return;
@@ -1853,9 +1853,14 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       }
     }
   } else {
-    llvm::errs() << "executing funciton calls\n";
-    llvm::errs() << f->getName() << "\n";
-    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f)/* && isCSEBegin*/) {
+    static bool isCSEBegin = false;
+    if (f->getName() == "__klee_posix_wrapped_main") {
+      isCSEBegin = true;
+    }
+
+    /* llvm::errs() << "executing funciton calls: " << f->getName() << "\n"; */
+    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f) /*&&
+        isCSEBegin*/) {
       if (executeCallCompositionally(state, ki, f, arguments))
         return;
     }
@@ -3383,7 +3388,8 @@ void Executor::updateStates(ExecutionState *current) {
         seedMap.find(es);
     if (it3 != seedMap.end())
       seedMap.erase(it3);
-    if (processTree) processTree->remove(es->ptreeNode);
+    if (processTree)
+      processTree->remove(es->ptreeNode);
     delete es;
   }
   removedStates.clear();
@@ -3619,21 +3625,22 @@ void Executor::run(ExecutionState &initialState) {
     if (::dumpPTree)
       dumpPTree();
 
-    llvm::errs() << "in Executor, before update states\n";
-    for (auto s : states) {
-      llvm::errs() << "state: " << s << "\n";
-    }
+    /* llvm::errs() << "in Executor, before update states\n"; */
+    /* for (auto s : states) { */
+    /*   llvm::errs() << "state: " << s << "\n"; */
+    /* } */
 
-    llvm::errs() << "add " << addedStates.size() << " states.\n";
-    for (auto x : addedStates) {
-      llvm::errs() << x << "\n";
-    }
-    llvm::errs() << "remove " << removedStates.size() << " states.\n";
-    for (auto x : removedStates) {
-      llvm::errs() << x << "\n";
-    }
+    /* llvm::errs() << "add " << addedStates.size() << " states.\n"; */
+    /* for (auto x : addedStates) { */
+    /*   llvm::errs() << x << "\n"; */
+    /* } */
+    /* llvm::errs() << "remove " << removedStates.size() << " states.\n"; */
+    /* for (auto x : removedStates) { */
+    /*   llvm::errs() << x << "\n"; */
+    /* } */
     updateStates(&state);
-    // llvm::errs() << "after updateStates, remaining " << states.size() << " states.\n";
+    // llvm::errs() << "after updateStates, remaining " << states.size() << "
+    // states.\n";
 
     if (!checkMemoryUsage()) {
       // update searchers when states were terminated early due to memory
@@ -3719,7 +3726,8 @@ void Executor::terminateState(ExecutionState &state) {
     if (it3 != seedMap.end())
       seedMap.erase(it3);
     addedStates.erase(it);
-    if (processTree) processTree->remove(state.ptreeNode);
+    if (processTree)
+      processTree->remove(state.ptreeNode);
     delete &state;
   }
   // for BUCSE testing, dump path condition and address space of this path.
@@ -4216,8 +4224,8 @@ void Executor::executeMemoryOperation(
                               : getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
-//  llvm::errs() << "execute memory operation, dump the address\n";
-//  address->dump();
+  //  llvm::errs() << "execute memory operation, dump the address\n";
+  //  address->dump();
 
   if (SimplifySymIndices) {
     if (!isa<ConstantExpr>(address))
@@ -4227,6 +4235,8 @@ void Executor::executeMemoryOperation(
   }
 
   address = optimizer.optimizeExpr(address, true);
+  /* llvm::errs() << "Executor::executeMemoryOperation: address is\n"; */
+  /* address->dump(); */
 
   // fast path: single in-bounds resolution
   ObjectPair op;
@@ -4503,7 +4513,7 @@ void Executor::runFunctionAsMain(Function *f, int argc, char **argv,
 
   initializeGlobals(*state);
 
-  //processTree = std::make_unique<PTree>(state);
+  // processTree = std::make_unique<PTree>(state);
   processTree = nullptr;
   run(*state);
   processTree = nullptr;
@@ -4763,7 +4773,8 @@ void Executor::dumpPTree() {
   snprintf(name, sizeof(name), "ptree%08d.dot", (int)stats::instructions);
   auto os = interpreterHandler->openOutputFile(name);
   if (os) {
-    if (processTree) processTree->dump(*os);
+    if (processTree)
+      processTree->dump(*os);
   }
 
   ::dumpPTree = 0;
@@ -4832,8 +4843,8 @@ bool Executor::checkCompatible(ExecutionState &es, Summary &sum) {
   Solver::Validity res;
   time::Span timeout = coreSolverTimeout;
   solver->setTimeout(timeout);
-  bool success = solver->evaluate(es.constraints, context, res,
-                                  es.queryMetaData);
+  bool success =
+      solver->evaluate(es.constraints, context, res, es.queryMetaData);
   solver->setTimeout(time::Span());
   if (!success) {
     es.pc = es.prevPC;
@@ -4847,14 +4858,13 @@ bool Executor::checkCompatible(ExecutionState &es, Summary &sum) {
   }
 }
 
-
 // precondition: the summary is compatible with es
 // Update: need actual arguments to do substitution.
 void Executor::applySummaryToAState(ExecutionState &es,
                                     std::vector<ref<Expr>> &args,
                                     Summary &sum) {
-  llvm::errs() << "in Executor::applySummaryToAState\n";
-  sum.dump();
+  /* llvm::errs() << "in Executor::applySummaryToAState\n"; */
+  /* sum.dump(); */
   // construct the substitution map: formalArg -> actualArg
   // do it here because it is convenient to access formalArg from sum.
   const auto &formalArgs = sum.getFormalArgs();
@@ -4874,11 +4884,9 @@ void Executor::applySummaryToAState(ExecutionState &es,
   // now we know all GlobalValue* from formalGlobals,
   // we should use them to find the current value of these globals in current
   // state.
-  for (auto x : formalGlobals) {
-    llvm::GlobalValue *gv = x.first;
-    llvm::Type *ty = gv->getType();
-    assert(isa<llvm::PointerType>(ty));
-    llvm::Type *gTy = cast<llvm::PointerType>(ty)->getElementType();
+  for (auto &&x : formalGlobals) {
+    const llvm::GlobalValue *gv = x.first;
+    llvm::Type *gTy = gv->getType()->getElementType();
     Expr::Width w = getWidthForLLVMType(gTy);
 
     ref<Expr> formalG = x.second;
@@ -4890,10 +4898,13 @@ void Executor::applySummaryToAState(ExecutionState &es,
   }
 
   // dump the replace map
-  llvm::errs() << "in Executor::applySummaryToAState: dumpping the replace map:\n";
+  llvm::errs()
+      << "in Executor::applySummaryToAState: dumpping the replace map:\n";
   for (auto x : replaceMap) {
-    llvm::errs() << "key0: "; x.first->dump();
-    llvm::errs() << "val0: "; x.second->dump();
+    llvm::errs() << "key0: ";
+    x.first->dump();
+    llvm::errs() << "val0: ";
+    x.second->dump();
   }
 
   // do the actual substitution
@@ -4910,7 +4921,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
   bool isVoidRet = sum.getFunction()->getReturnType()->isVoidTy();
   for (auto nps : normalPathSummaries) {
     ExecutionState *newState = applyNormalPathSummaryToAState(es, erv, nps);
-    if (newState) addedStates.push_back(newState);
+    if (newState)
+      addedStates.push_back(newState);
     if (newState) {
       llvm::errs() << "generating a new state: " << newState << "\n";
       newState->constraints.dump();
@@ -4924,6 +4936,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
     }
   }
 
+  llvm::errs() << "applying a error summary, it belongs to "
+               << sum.getFunction()->getName() << "\n";
   for (auto eps : errorPathSummaries) {
     // record the pre condition and termination reason, but do not generate new
     // states.
@@ -4935,7 +4949,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
   if (addedStates.empty()) {
     removedStates.push_back(&es);
   } else {
-    llvm::errs() << "adding states, we use current state to replace the last states in addedStates\n";
+    llvm::errs() << "adding states, we use current state to replace the last "
+                    "states in addedStates\n";
     ExecutionState *toReplaceState = addedStates.back();
 
     llvm::errs() << "toReplaceState = " << toReplaceState << "\n";
@@ -4969,7 +4984,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
     delete toReplaceState;
     addedStates.pop_back();
   }
-
+  /* llvm::errs() << "after applying summary, this state is:\n"; */
+  /* es.dump(); */
 }
 
 // apply a path summary to current state and generate a new state.
@@ -4977,11 +4993,11 @@ ExecutionState *
 Executor::applyNormalPathSummaryToAState(ExecutionState &es,
                                          ExprReplaceVisitor2 &replaceMap,
                                          const NormalPathSummary &nps) {
-  nps.dump();
   llvm::errs() << "applying a normal path summary to a state\n";
   nps.dump();
 
-  llvm::errs() << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n";
+  llvm::errs()
+      << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n";
   es.dumpConstraint();
 
   // construct a new state
@@ -4997,8 +5013,6 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
       delete newState;
       return nullptr;
     }
-//    llvm::errs() << "the new state's path constraint is:\n";
-//    newState->constraints.dump();
   }
 
   // for ret result
@@ -5006,8 +5020,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
     auto retVal = replaceMap.visit(nps.getRetVal());
     // TODO: bind it with the Instruction pointed by prevPc.
     bindLocal(newState->prevPC, *newState, retVal);
-//    llvm::errs() << "the ret val of new state is:\n";
-//    retVal->dump();
+    //    llvm::errs() << "the ret val of new state is:\n";
+    //    retVal->dump();
   }
 
   // for globals
@@ -5019,9 +5033,9 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
     ref<Expr> updatedG = replaceMap.visit(x.second);
 
-//     llvm::errs() << "for this new state, the following globals are modified:\n";
-//     llvm::errs() << gv->getName() << ": ";
-//     updatedG->dump();
+    llvm::errs() << "for this new state, the following globals are modified:\n";
+    llvm::errs() << gv->getName() << ": ";
+    updatedG->dump();
 
     wos->write(0, updatedG);
   }
@@ -5036,11 +5050,13 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
                                              const ErrorPathSummary &nps) {
   // construct a state
   ExecutionState *newState = new ExecutionState(es);
-  addedStates.push_back(newState);
   for (auto pre : nps.getPreCond()) {
-    addConstraint(*newState, replaceMap.visit(pre));
+    bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
+    if (!success) return;
   }
-  terminateStateOnError(*newState, "apply error path summary", (enum TerminateReason)nps.getTerminateReason());
+  addedStates.push_back(newState);
+  terminateStateOnError(*newState, "apply error path summary",
+                        (enum TerminateReason)nps.getTerminateReason());
 }
 
 ///

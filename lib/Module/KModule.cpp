@@ -302,7 +302,7 @@ void KModule::optimiseAndPrepare(
   pm3.add(new FunctionAliasPass());
   pm3.run(*module);
 
-  //outs() << "print module before interval info\n" << *module;
+  //errs() << "print module before interval info\n" << *module;
   legacy::PassManager pm4;
   pm4.add(new IntervalInfoPass());
   pm4.add(new IntervalCtxPass());
@@ -409,8 +409,17 @@ unsigned KModule::getConstantID(Constant *c, KInstruction* ki) {
   return id;
 }
 
+static const char *dontCseFuncList[] = {
+  "setlocale",
+};
+
+#define NELEMS(array) (sizeof(array)/sizeof(array[0]))
 void KModule::collectCseFunctions() {
+  std::vector<std::string> dontCse(dontCseFuncList, dontCseFuncList+NELEMS(dontCseFuncList));
   for (llvm::Function &F : *module) {
+    if (std::find(dontCse.begin(), dontCse.end(), F.getName()) != dontCse.end()) {
+      continue;
+    }
     if (checkCseSuitable(F)) {
       cseSuitableFunctions.insert(&F);
     }
@@ -424,6 +433,11 @@ void KModule::collectCseFunctions() {
 }
 
 bool KModule::checkCseSuitable(llvm::Function &F) {
+  if (!F.doesNotAccessMemory())
+    return false;
+  else
+    return true;
+
   if (F.isIntrinsic())
     return false;
   if (F.getName() == "main")

@@ -38,7 +38,7 @@ public:
   }
 
   void execute() {
-    MY_KLEE_DEBUG(internalEnv.dump(llvm::outs()));
+    /* MY_KLEE_DEBUG(internalEnv.dump(llvm::errs())); */
     for (auto &&i : *bb) {
       executeInstruction(&i);
     }
@@ -47,9 +47,9 @@ public:
 
   Env executeToInst(llvm::Instruction *inst) {
     assert(inst->getParent() == bb && "inst must be in bb");
-    MY_KLEE_DEBUG( gEnvMap.dump() );
-    MY_KLEE_DEBUG( llvm::outs() << "bb: " << bb << "\n" << *bb );
-    MY_KLEE_DEBUG( internalEnv.dump(llvm::outs()) );
+    /* MY_KLEE_DEBUG( gEnvMap.dump() ); */
+    /* MY_KLEE_DEBUG( llvm::errs() << "bb: " << bb << "\n" << *bb ); */
+    /* MY_KLEE_DEBUG( internalEnv.dump(llvm::errs()) ); */
 
     // env of entry block is always empty, so it should be excluded
     bool isEntryBlock = (bb == &bb->getParent()->getEntryBlock());
@@ -71,7 +71,7 @@ private:
   /// this should be called before executing the block. (in constructor)
   /// worth noting that this is not appliable to entry block.
   void collectEnvIn() {
-    MY_KLEE_DEBUG(llvm::outs() << "collect env comming in bb: " << bb << "\n");
+    MY_KLEE_DEBUG(llvm::errs() << "collect env comming in bb: " << bb << "\n");
     if (LI.isLoopHeader(bb)) {
       collectEnvForLoopheader();
     } else {
@@ -111,7 +111,7 @@ private:
 
   /// this should be called after executing the block.
   void updateEnvOut() {
-    MY_KLEE_DEBUG(llvm::outs() << "updating env out of bb: " << bb << "\n");
+    MY_KLEE_DEBUG(llvm::errs() << "updating env out of bb: " << bb << "\n");
     assert(succEnvs.size() == 0 || succEnvs.size() == 2);
     if (succEnvs.size() == 0) {
       // only has one successor
@@ -158,10 +158,10 @@ private:
 
   /// change env according to the instruction
   void executeInstruction(llvm::Instruction *inst) {
-    MY_KLEE_DEBUG(llvm::outs() << "execute instruction:\n");
-    MY_KLEE_DEBUG(llvm::outs() << *inst << "\n");
+    MY_KLEE_DEBUG(llvm::errs() << "execute instruction:\n");
+    MY_KLEE_DEBUG(llvm::errs() << *inst << "\n");
     llvm::Type *type = inst->getType();
-    MY_KLEE_DEBUG( llvm::outs() << "inst type = " << *type << "\n" );
+    MY_KLEE_DEBUG(llvm::errs() << "inst type = " << *type << "\n");
     if (llvm::isa<llvm::StoreInst>(inst)) {
       llvm::StoreInst *i = llvm::cast<llvm::StoreInst>(inst);
       llvm::Value *v = i->getValueOperand();
@@ -209,8 +209,42 @@ private:
 
   void executeBinaryOp(llvm::BinaryOperator *binst) {
     llvm::Value *op1 = binst->getOperand(0);
-    llvm::ConstantInt *c1 = llvm::dyn_cast<llvm::ConstantInt>(op1);
     llvm::Value *op2 = binst->getOperand(1);
+#if 1
+    auto getInterval = [&](llvm::Value *op) {
+      MY_KLEE_DEBUG(llvm::errs() << "get interval: " << *op << "\n";);
+      if (llvm::ConstantInt *c = llvm::dyn_cast<llvm::ConstantInt>(op)) {
+        auto v = c->getSExtValue();
+        return Interval(v, v);
+      } else if (llvm::isa<llvm::ConstantExpr>(op)) {
+        return Interval::Top();
+      } else {
+        Interval res = internalEnv.lookup(op);
+        return res;
+      }
+    };
+
+    auto opcode = binst->getOpcode();
+    Interval i;
+    switch (opcode) {
+    case llvm::Instruction::Add:
+    case llvm::Instruction::Sub:
+    case llvm::Instruction::Mul:
+    case llvm::Instruction::SDiv: {
+      Interval i1 = getInterval(op1);
+      Interval i2 = getInterval(op2);
+      i = apply(opcode, i1, i2);
+      break;
+    }
+    default: {
+      i = Interval::Top();
+      break;
+    }
+    }
+    internalEnv.set(binst, i);
+#else
+
+    llvm::ConstantInt *c1 = llvm::dyn_cast<llvm::ConstantInt>(op1);
     llvm::ConstantInt *c2 = llvm::dyn_cast<llvm::ConstantInt>(op2);
 
     auto opcode = binst->getOpcode();
@@ -238,6 +272,7 @@ private:
       i = Interval::Top();
     }
     internalEnv.set(binst, i);
+#endif
   }
 
   /// apply add/sub/mul/div directly on two intervals
@@ -533,7 +568,7 @@ private:
     if (inst->getType()->isIntegerTy() || inst->getType()->isPointerTy()) {
       internalEnv.set(inst, Interval::Top());
     }
-    MY_KLEE_DEBUG(llvm::outs() << "other llvm insts, ignoring\n");
+    MY_KLEE_DEBUG(llvm::errs() << "other llvm insts, ignoring\n");
   }
 };
 } // namespace klee

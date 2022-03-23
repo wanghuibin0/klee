@@ -114,6 +114,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     forkDisabled(state.forkDisabled) {
   for (const auto &cur_mergehandler: openMergeStack)
     cur_mergehandler->addOpenState(this);
+  setID();
 }
 
 ExecutionState *ExecutionState::branch() {
@@ -359,7 +360,20 @@ void ExecutionState::addConstraint(ref<Expr> e) {
   c.addConstraint(e);
 }
 
-void ExecutionState::dumpConstraint() {
+void ExecutionState::dumpConstraint() const {
   constraints.dump();
 }
 
+void ExecutionState::dumpAddressSpace() const {
+  addressSpace.dump();
+}
+
+void ExecutionState::dump() const {
+  llvm::errs() << "dumping ExecutionState: " << this << "\n";
+  llvm::errs() << "constraints:\n";
+  dumpConstraint();
+  llvm::errs() << "stack:\n";
+  dumpStack(llvm::errs());
+  llvm::errs() << "address space:\n";
+  dumpAddressSpace();
+}
