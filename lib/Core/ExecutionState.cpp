@@ -360,6 +360,11 @@ void ExecutionState::addConstraint(ref<Expr> e) {
   c.addConstraint(e);
 }
 
+bool ExecutionState::addConstraintMayFail(ref<Expr> e) {
+  ConstraintManager c(constraints);
+  return c.addConstraintMayFail(e);
+}
+
 void ExecutionState::dumpConstraint() const {
   constraints.dump();
 }

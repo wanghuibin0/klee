@@ -52,15 +52,15 @@ void CTXCSExecutor::run() {
 
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
-    llvm::errs() << "new round, current state is " << &state << "\n";
+    /* llvm::errs() << "new round, current state is " << &state << "\n"; */
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
     timers.invoke();
     updateStates(&state);
-    llvm::errs() << "after this round, remaining " << states.size()
-                 << " states.\n";
+    /* llvm::errs() << "after this round, remaining " << states.size() */
+    /*              << " states.\n"; */
   }
 
   delete searcher;
@@ -140,9 +140,9 @@ void CTXCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
       globalsMod.push_back(&v);
-      llvm::errs() << "make a global variable symbolic: " << name << "\n";
-      llvm::errs() << "the memory object is: \n";
-      mo->dump();
+      /* llvm::errs() << "make a global variable symbolic: " << name << "\n"; */
+      /* llvm::errs() << "the memory object is: \n"; */
+      /* mo->dump(); */
       const ObjectState *os = state->addressSpace.findObject(mo);
       Expr::Width width = getWidthForLLVMType(v.getType()->getElementType());
       summary->addFormalGlobals(&v, os->read(0, width));
@@ -160,8 +160,8 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
     Expr::Width w = 0;
 
     if (isa<llvm::PointerType>(argTy)) {
-      llvm::errs()
-          << "in CTXCSExecutor::makeArgsSymbolic: function arg is a pointer\n";
+      /* llvm::errs() */
+      /*     << "in CTXCSExecutor::makeArgsSymbolic: function arg is a pointer\n"; */
       w = Context::get().getPointerWidth();
     } else {
       w = getWidthForLLVMType(argTy);
@@ -184,14 +184,14 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
-      llvm::errs() << "this arg " << name
-                   << " is a pointer, allocate some memory for its pointee\n";
+      /* llvm::errs() << "this arg " << name */
+      /*              << " is a pointer, allocate some memory for its pointee\n"; */
     } else {
-      llvm::errs() << "CTXCSExecutor::makeArgsSymbolic: creating new symbolic "
-                      "array with size "
-                   << w << "\n";
+      /* llvm::errs() << "CTXCSExecutor::makeArgsSymbolic: creating new symbolic " */
+      /*                 "array with size " */
+      /*              << w << "\n"; */
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
-      llvm::errs() << "the arg name is " << name << "\n";
+      /* llvm::errs() << "the arg name is " << name << "\n"; */
       const Array *array =
           arrayCache.CreateArray(name, Expr::getMinBytesForWidth(w));
       res = Expr::createTempRead(array, w);
@@ -259,8 +259,8 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
     MemoryObject *mo = globalObjects[g];
     const ObjectState *os = state.addressSpace.findObject(mo);
     ref<Expr> gVal = os->read(0, w);
-    llvm::errs() << "adding a modified global: ";
-    gVal->dump();
+    /* llvm::errs() << "adding a modified global: "; */
+    /* gVal->dump(); */
     ps.addGlobalsModified(g, gVal);
   }
 
@@ -296,12 +296,12 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   ++instCnter;
 
   Instruction *inst = ki->inst;
-  errs() << "this instruction: " << *inst << "\n";
+  /* errs() << "this instruction: " << *inst << "\n"; */
   //errs() << "counter is: " << instCnter << "\n";
 
   if (instCnter >= MaxLoopUnroll) {
-    errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n";
-    errs() << "reach max loop unroll\n";
+    /* errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n"; */
+    /* errs() << "reach max loop unroll\n"; */
     terminateState(state);
   }
 

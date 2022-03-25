@@ -120,6 +120,15 @@ void ConstraintManager::addConstraint(const ref<Expr> &e) {
   addConstraintInternal(simplified);
 }
 
+bool ConstraintManager::addConstraintMayFail(const ref<Expr> &e) {
+  ref<Expr> simplified = simplifyExpr(constraints, e);
+  if (isa<ConstantExpr>(simplified) && cast<ConstantExpr>(simplified)->isFalse()) {
+    return false;
+  }
+  addConstraintInternal(simplified);
+  return true;
+}
+
 ConstraintManager::ConstraintManager(ConstraintSet &_constraints)
     : constraints(_constraints) {}
 

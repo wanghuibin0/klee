@@ -411,6 +411,8 @@ unsigned KModule::getConstantID(Constant *c, KInstruction* ki) {
 
 static const char *dontCseFuncList[] = {
   "setlocale",
+  "__uClibc_init",
+  "__uClibc_fini",
 };
 
 #define NELEMS(array) (sizeof(array)/sizeof(array[0]))

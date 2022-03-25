@@ -160,7 +160,7 @@ bool IntervalCtxPass::runOnModule(llvm::Module &M) {
     // update global context store
     updateFunctionContext(&f, argEnv);
   }
-  klee::dump(getGlobalEnvContext());
+  /* klee::dump(getGlobalEnvContext()); */
   return false;
 }
 

@@ -38,16 +38,16 @@ SummaryManager::createSummaryManager(const Executor &mainExecutor) {
 
 Summary *CTXCSESummaryManager::getSummary(ExecutionState &es,
                                          llvm::Function *f) {
-  llvm::errs() << "getting summary for function " << f->getName() << "\n";
+  /* llvm::errs() << "getting summary for function " << f->getName() << "\n"; */
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
-    llvm::errs() << "summary does not exist, try to compute.\n";
+    /* llvm::errs() << "summary does not exist, try to compute.\n"; */
     std::unique_ptr<Summary> sum = computeSummary(f);
     Summary *res = sum.get();
     summaryLib.insert(std::make_pair(f, std::move(sum)));
     return res;
   } else {
-    llvm::errs() << "summary exists, reusing.\n";
+    /* llvm::errs() << "summary exists, reusing.\n"; */
     return summaryLib[f].get();
   }
 }

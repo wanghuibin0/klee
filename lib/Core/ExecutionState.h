@@ -265,6 +265,7 @@ public:
   void addSymbolic(const MemoryObject *mo, const Array *array);
 
   void addConstraint(ref<Expr> e);
+  bool addConstraintMayFail(ref<Expr> e);
 
   void dumpConstraint() const;
 

@@ -69,6 +69,7 @@ public:
   /// Add constraint to the referenced constraint set
   /// \param constraint
   void addConstraint(const ref<Expr> &constraint);
+  bool addConstraintMayFail(const ref<Expr> &constraint);
 
 private:
   /// Rewrite set of constraints using the visitor

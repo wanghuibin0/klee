@@ -1227,34 +1227,7 @@ bool Executor::addConstraintMayFail(ExecutionState &state,
     return true;
   }
 
-  // Check to see if this constraint violates seeds.
-  std::map<ExecutionState *, std::vector<SeedInfo>>::iterator it =
-      seedMap.find(&state);
-  if (it != seedMap.end()) {
-    bool warn = false;
-    for (std::vector<SeedInfo>::iterator siit = it->second.begin(),
-                                         siie = it->second.end();
-         siit != siie; ++siit) {
-      bool res;
-      bool success = solver->mustBeFalse(state.constraints,
-                                         siit->assignment.evaluate(condition),
-                                         res, state.queryMetaData);
-      assert(success && "FIXME: Unhandled solver failure");
-      (void)success;
-      if (res) {
-        siit->patchSeed(state, condition, solver.get());
-        warn = true;
-      }
-    }
-    if (warn)
-      klee_warning("seeds patched for violating constraint");
-  }
-
-  state.addConstraint(condition);
-  if (ivcEnabled)
-    doImpliedValueConcretization(state, condition,
-                                 ConstantExpr::alloc(1, Expr::Bool));
-  return true;
+  return state.addConstraintMayFail(condition);
 }
 
 void Executor::addConstraint(ExecutionState &state,
@@ -1706,20 +1679,20 @@ ref<klee::ConstantExpr> Executor::getEhTypeidFor(ref<Expr> type_info) {
 bool Executor::executeCallCompositionally(ExecutionState &state,
                                           KInstruction *ki, Function *f,
                                           std::vector<ref<Expr>> &arguments) {
-  llvm::errs() << "compositional execution for function " << f->getName()
-               << "\n";
+  /* llvm::errs() << "compositional execution for function " << f->getName() */
+  /*              << "\n"; */
 
   SummaryManager *sm = summaryManager;
   Summary *summary = sm->getSummary(state, f);
   if (summary && checkCompatible(state, *summary)) {
     // should prepare actual arguments before application.
-    llvm::errs() << "dumping summary before apply summary\n";
-    //summary->dump();
+    /* llvm::errs() << "dumping summary before apply summary\n"; */
+    /* //summary->dump(); */
     applySummary(state, arguments, summary);
-    llvm::errs() << "success: compositional execution for function "
-                 << f->getName() << "\n";
+    /* llvm::errs() << "success: compositional execution for function " */
+    /*              << f->getName() << "\n"; */
   } else {
-    llvm::errs() << "cannot get valid summary, fallback to normal SE\n";
+    /* llvm::errs() << "cannot get valid summary, fallback to normal SE\n"; */
   }
   return true;
 }
@@ -4874,8 +4847,8 @@ void Executor::applySummaryToAState(ExecutionState &es,
   // we assume that there is no var args.
   assert(formalArgs.size() == actualArgs.size());
   for (unsigned i = 0; i < actualArgs.size(); ++i) {
-    llvm::errs() << "actual arg " << i << ":\n";
-    actualArgs[i]->dump();
+    /* llvm::errs() << "actual arg " << i << ":\n"; */
+    /* actualArgs[i]->dump(); */
     replaceMap.insert(std::make_pair(formalArgs[i], actualArgs[i]));
   }
 
@@ -4898,14 +4871,14 @@ void Executor::applySummaryToAState(ExecutionState &es,
   }
 
   // dump the replace map
-  llvm::errs()
-      << "in Executor::applySummaryToAState: dumpping the replace map:\n";
-  for (auto x : replaceMap) {
-    llvm::errs() << "key0: ";
-    x.first->dump();
-    llvm::errs() << "val0: ";
-    x.second->dump();
-  }
+  /* llvm::errs() */
+  /*     << "in Executor::applySummaryToAState: dumpping the replace map:\n"; */
+  /* for (auto x : replaceMap) { */
+  /*   llvm::errs() << "key0: "; */
+  /*   x.first->dump(); */
+  /*   llvm::errs() << "val0: "; */
+  /*   x.second->dump(); */
+  /* } */
 
   // do the actual substitution
   ExprReplaceVisitor2 erv(replaceMap);
@@ -4915,29 +4888,29 @@ void Executor::applySummaryToAState(ExecutionState &es,
   const std::vector<ErrorPathSummary> &errorPathSummaries =
       sum.getErrorPathSummaries();
 
-  llvm::errs() << "applying a normal summary, it belongs to "
-               << sum.getFunction()->getName() << "\n";
+  /* llvm::errs() << "applying a normal summary, it belongs to " */
+  /*              << sum.getFunction()->getName() << "\n"; */
 
-  bool isVoidRet = sum.getFunction()->getReturnType()->isVoidTy();
+  /* bool isVoidRet = sum.getFunction()->getReturnType()->isVoidTy(); */
   for (auto nps : normalPathSummaries) {
     ExecutionState *newState = applyNormalPathSummaryToAState(es, erv, nps);
     if (newState)
       addedStates.push_back(newState);
-    if (newState) {
-      llvm::errs() << "generating a new state: " << newState << "\n";
-      newState->constraints.dump();
-      llvm::errs() << "ID is: " << newState->getID() << "\n";
-      llvm::errs() << "ret Result = \n";
-      if (!isVoidRet) {
-        getDestCell(*newState, newState->prevPC).value->dump();
-      }
-    } else {
-      llvm::errs() << "not generate a state\n";
-    }
+    /* if (newState) { */
+    /*   llvm::errs() << "generating a new state: " << newState << "\n"; */
+    /*   newState->constraints.dump(); */
+    /*   llvm::errs() << "ID is: " << newState->getID() << "\n"; */
+    /*   llvm::errs() << "ret Result = \n"; */
+    /*   if (!isVoidRet) { */
+    /*     getDestCell(*newState, newState->prevPC).value->dump(); */
+    /*   } */
+    /* } else { */
+    /*   llvm::errs() << "not generate a state\n"; */
+    /* } */
   }
 
-  llvm::errs() << "applying a error summary, it belongs to "
-               << sum.getFunction()->getName() << "\n";
+  /* llvm::errs() << "applying a error summary, it belongs to " */
+  /*              << sum.getFunction()->getName() << "\n"; */
   for (auto eps : errorPathSummaries) {
     // record the pre condition and termination reason, but do not generate new
     // states.
@@ -4949,37 +4922,37 @@ void Executor::applySummaryToAState(ExecutionState &es,
   if (addedStates.empty()) {
     removedStates.push_back(&es);
   } else {
-    llvm::errs() << "adding states, we use current state to replace the last "
-                    "states in addedStates\n";
+    /* llvm::errs() << "adding states, we use current state to replace the last " */
+    /*                 "states in addedStates\n"; */
     ExecutionState *toReplaceState = addedStates.back();
 
-    llvm::errs() << "toReplaceState = " << toReplaceState << "\n";
-    toReplaceState->constraints.dump();
-    llvm::errs() << "ID is: " << toReplaceState->getID() << "\n";
-    llvm::errs() << "ret Result = \n";
-    if (!isVoidRet) {
-      getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump();
-    }
-    llvm::errs() << "current state = " << &es << "\n";
-    es.constraints.dump();
-    llvm::errs() << "ID is: " << es.getID() << "\n";
-    llvm::errs() << "ret Result = \n";
-    // getDestCell(es, es.prevPC).value->dump();
+    /* llvm::errs() << "toReplaceState = " << toReplaceState << "\n"; */
+    /* toReplaceState->constraints.dump(); */
+    /* llvm::errs() << "ID is: " << toReplaceState->getID() << "\n"; */
+    /* llvm::errs() << "ret Result = \n"; */
+    /* if (!isVoidRet) { */
+    /*   getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump(); */
+    /* } */
+    /* llvm::errs() << "current state = " << &es << "\n"; */
+    /* es.constraints.dump(); */
+    /* llvm::errs() << "ID is: " << es.getID() << "\n"; */
+    /* llvm::errs() << "ret Result = \n"; */
+    /* // getDestCell(es, es.prevPC).value->dump(); */
 
     swap(es, *toReplaceState);
 
-    llvm::errs() << "checking after swap: \n";
-    llvm::errs() << "toReplaceState = " << toReplaceState << "\n";
-    toReplaceState->constraints.dump();
-    llvm::errs() << "ID is: " << toReplaceState->getID() << "\n";
-    llvm::errs() << "ret Result = \n";
-    // getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump();
-    llvm::errs() << "current state = " << &es << "\n";
-    es.constraints.dump();
-    llvm::errs() << "ID is: " << es.getID() << "\n";
-    llvm::errs() << "ret Result = \n";
-    if (!isVoidRet)
-      getDestCell(es, es.prevPC).value->dump();
+    /* llvm::errs() << "checking after swap: \n"; */
+    /* llvm::errs() << "toReplaceState = " << toReplaceState << "\n"; */
+    /* toReplaceState->constraints.dump(); */
+    /* llvm::errs() << "ID is: " << toReplaceState->getID() << "\n"; */
+    /* llvm::errs() << "ret Result = \n"; */
+    /* // getDestCell(*toReplaceState, toReplaceState->prevPC).value->dump(); */
+    /* llvm::errs() << "current state = " << &es << "\n"; */
+    /* es.constraints.dump(); */
+    /* llvm::errs() << "ID is: " << es.getID() << "\n"; */
+    /* llvm::errs() << "ret Result = \n"; */
+    /* if (!isVoidRet) */
+    /*   getDestCell(es, es.prevPC).value->dump(); */
 
     delete toReplaceState;
     addedStates.pop_back();
@@ -4993,12 +4966,12 @@ ExecutionState *
 Executor::applyNormalPathSummaryToAState(ExecutionState &es,
                                          ExprReplaceVisitor2 &replaceMap,
                                          const NormalPathSummary &nps) {
-  llvm::errs() << "applying a normal path summary to a state\n";
-  nps.dump();
+  /* llvm::errs() << "applying a normal path summary to a state\n"; */
+  /* nps.dump(); */
 
-  llvm::errs()
-      << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n";
-  es.dumpConstraint();
+  /* llvm::errs() */
+  /*     << "in Executor::applyNormalPathSummaryToAState: constraits of es: \n"; */
+  /* es.dumpConstraint(); */
 
   // construct a new state
   ExecutionState *newState = new ExecutionState(es);
@@ -5006,8 +4979,8 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
   for (auto pre : nps.getPreCond()) {
-    llvm::errs() << "in Executor::applyNormalPathSummaryToAState: ";
-    pre->dump();
+    /* llvm::errs() << "in Executor::applyNormalPathSummaryToAState: "; */
+    /* pre->dump(); */
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (success == false) {
       delete newState;
@@ -5033,9 +5006,9 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
     ref<Expr> updatedG = replaceMap.visit(x.second);
 
-    llvm::errs() << "for this new state, the following globals are modified:\n";
-    llvm::errs() << gv->getName() << ": ";
-    updatedG->dump();
+    /* llvm::errs() << "for this new state, the following globals are modified:\n"; */
+    /* llvm::errs() << gv->getName() << ": "; */
+    /* updatedG->dump(); */
 
     wos->write(0, updatedG);
   }

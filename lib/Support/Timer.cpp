@@ -36,9 +36,9 @@ time::Span Timer::getInterval() const {
 void Timer::invoke(const time::Point &currentTime) {
   if (currentTime < nextInvocationTime) return;
 
-  time::Span userTime = time::getUserTime();
-  llvm::errs() << "userTime: " << userTime << "\n";
-  llvm::errs() << "timer triggered\n";
+  /* time::Span userTime = time::getUserTime(); */
+  /* llvm::errs() << "userTime: " << userTime << "\n"; */
+  /* llvm::errs() << "timer triggered\n"; */
   run();
   nextInvocationTime = currentTime + interval;
 };
