@@ -31,6 +31,23 @@ private:
   Executor proto; // this will be prototypes of all future summary executors
 };
 
+class BUCSESummaryManager : public SummaryManager {
+public:
+  // ctors
+  BUCSESummaryManager(const Executor &mainExecutor)
+      : summaryLib(), proto(mainExecutor) {
+    proto.setSummaryManager(this);
+  }
+
+  Summary *getSummary(ExecutionState &es, llvm::Function *f) override;
+
+private:
+  std::unique_ptr<Summary> computeSummary(llvm::Function *f);
+
+private:
+  std::map<llvm::Function *, std::unique_ptr<Summary>> summaryLib;
+  Executor proto; // this will be prototypes of all future summary executors
+};
 } // namespace klee
 
 #endif
