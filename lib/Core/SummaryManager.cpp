@@ -1,3 +1,4 @@
+#include "klee/Support/ErrorHandling.h"
 #include "klee/Core/SummaryManager.h"
 #include "ConcreteSummaryManager.h"
 #include "CSExecutor.h"
@@ -29,10 +30,12 @@ cl::opt<InterpreterType> InterpreterToUse(
 SummaryManager *
 SummaryManager::createSummaryManager(const Executor &mainExecutor) {
   if (InterpreterToUse == CTXCSE) {
-    llvm::errs() << "creating ctxcse summary manager.\n";
+    /* llvm::errs() << "creating ctxcse summary manager.\n"; */
+    klee_message("creating ctxcse summary manager.\n");
     return new CTXCSESummaryManager(mainExecutor);
   } else if (InterpreterToUse == BUCSE) {
-    llvm::errs() << "creating bucse summary manager.\n";
+    /* llvm::errs() << "creating bucse summary manager.\n"; */
+    klee_message("creating bucse summary manager.\n");
     return new BUCSESummaryManager(mainExecutor);
   } else {
     return nullptr;
@@ -42,15 +45,18 @@ SummaryManager::createSummaryManager(const Executor &mainExecutor) {
 Summary *CTXCSESummaryManager::getSummary(ExecutionState &es,
                                          llvm::Function *f) {
   /* llvm::errs() << "getting summary for function " << f->getName() << "\n"; */
+  klee_message("getting summary for function %s\n", f->getName().data());
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
     /* llvm::errs() << "summary does not exist, try to compute.\n"; */
+    klee_message("summary does not exist, try to compute it by a ctxcse executor.\n");
     std::unique_ptr<Summary> sum = computeSummary(f);
     Summary *res = sum.get();
     summaryLib.insert(std::make_pair(f, std::move(sum)));
     return res;
   } else {
     /* llvm::errs() << "summary exists, reusing.\n"; */
+    klee_message("summary exists, reusing.\n");
     return summaryLib[f].get();
   }
 }
@@ -67,15 +73,18 @@ std::unique_ptr<Summary> CTXCSESummaryManager::computeSummary(llvm::Function *f)
 Summary *BUCSESummaryManager::getSummary(ExecutionState &es,
                                          llvm::Function *f) {
   /* llvm::errs() << "getting summary for function " << f->getName() << "\n"; */
+  klee_message("getting summary for function %s\n", f->getName().data());
   if (summaryLib.find(f) == summaryLib.end()) {
     // summary does not exist, try to compute.
     /* llvm::errs() << "summary does not exist, try to compute.\n"; */
+    klee_message("summary does not exist, try to compute it by a bucse executor.\n");
     std::unique_ptr<Summary> sum = computeSummary(f);
     Summary *res = sum.get();
     summaryLib.insert(std::make_pair(f, std::move(sum)));
     return res;
   } else {
     /* llvm::errs() << "summary exists, reusing.\n"; */
+    klee_message("summary exists, reusing.\n");
     return summaryLib[f].get();
   }
 }

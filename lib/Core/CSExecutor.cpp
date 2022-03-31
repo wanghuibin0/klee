@@ -52,7 +52,7 @@ void CTXCSExecutor::run() {
 
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
-    /* llvm::errs() << "new round, current state is " << &state << "\n"; */
+    llvm::errs() << "new round, current state is " << &state << "\n";
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
@@ -203,7 +203,7 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
 }
 
 void CTXCSExecutor::terminateState(ExecutionState &state) {
-  interpreterHandler->incPathsExplored();
+  /* interpreterHandler->incPathsExplored(); */
 
   std::vector<ExecutionState *>::iterator it =
       std::find(addedStates.begin(), addedStates.end(), &state);
@@ -285,9 +285,6 @@ void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
   summary->addErrorPathSummary(eps);
 
   terminateState(state);
-
-  if (shouldExitOn(termReason))
-    haltExecution = true;
 }
 
 void CTXCSExecutor::stepInstruction(ExecutionState &state) {
