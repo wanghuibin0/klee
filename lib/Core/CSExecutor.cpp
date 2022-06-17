@@ -4,11 +4,12 @@
 #include "Searcher.h"
 #include "StatsTracker.h"
 
+#include "../Module/IntervalInfo/Env.h"
 #include "Summary.h"
 #include "klee/Core/SummaryManager.h"
 #include "klee/Module/EnvContext.h"
-#include "../Module/IntervalInfo/Env.h"
 
+#include "klee/Support/Debug.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
@@ -38,7 +39,7 @@ void CTXCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
   // bindModuleConstants should be called after initializeGlobals
-  //bindModuleConstants();
+  // bindModuleConstants();
 
   buildConstraintFromStaticContext(es, func);
 
@@ -50,17 +51,14 @@ void CTXCSExecutor::run() {
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
-  while (!states.empty() && !haltExecution) {
+  while (!states.empty() && !gHaltExecution) {
     ExecutionState &state = searcher->selectState();
-    llvm::errs() << "new round, current state is " << &state << "\n";
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
     timers.invoke();
     updateStates(&state);
-    /* llvm::errs() << "after this round, remaining " << states.size() */
-    /*              << " states.\n"; */
   }
 
   delete searcher;
@@ -97,8 +95,10 @@ void CTXCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
     KFunction *kf = kmodule->functionMap[f];
     ref<Expr> arg = getArgumentCell(*es, kf, i).value;
 
-    ref<Expr> expr1 = SgeExpr::create(arg, ConstantExpr::alloc(lower, Expr::Int32));
-    ref<Expr> expr2 = SleExpr::create(arg, ConstantExpr::alloc(upper, Expr::Int32));
+    ref<Expr> expr1 =
+        SgeExpr::create(arg, ConstantExpr::alloc(lower, arg->getWidth()));
+    ref<Expr> expr2 =
+        SleExpr::create(arg, ConstantExpr::alloc(upper, arg->getWidth()));
 
     ref<Expr> expr = AndExpr::create(expr1, expr2);
 
@@ -121,8 +121,6 @@ void CTXCSExecutor::initializeGlobals(ExecutionState &state) {
   allocateGlobalObjects(state);
   initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
-  //  llvm::errs() << "after initialize globals, dump the address space\n";
-  //  state.addressSpace.dump();
 }
 
 void CTXCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
@@ -140,9 +138,6 @@ void CTXCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
       globalsMod.push_back(&v);
-      /* llvm::errs() << "make a global variable symbolic: " << name << "\n"; */
-      /* llvm::errs() << "the memory object is: \n"; */
-      /* mo->dump(); */
       const ObjectState *os = state->addressSpace.findObject(mo);
       Expr::Width width = getWidthForLLVMType(v.getType()->getElementType());
       summary->addFormalGlobals(&v, os->read(0, width));
@@ -160,8 +155,6 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
     Expr::Width w = 0;
 
     if (isa<llvm::PointerType>(argTy)) {
-      /* llvm::errs() */
-      /*     << "in CTXCSExecutor::makeArgsSymbolic: function arg is a pointer\n"; */
       w = Context::get().getPointerWidth();
     } else {
       w = getWidthForLLVMType(argTy);
@@ -184,14 +177,8 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
-      /* llvm::errs() << "this arg " << name */
-      /*              << " is a pointer, allocate some memory for its pointee\n"; */
     } else {
-      /* llvm::errs() << "CTXCSExecutor::makeArgsSymbolic: creating new symbolic " */
-      /*                 "array with size " */
-      /*              << w << "\n"; */
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
-      /* llvm::errs() << "the arg name is " << name << "\n"; */
       const Array *array =
           arrayCache.CreateArray(name, Expr::getMinBytesForWidth(w));
       res = Expr::createTempRead(array, w);
@@ -203,8 +190,6 @@ void CTXCSExecutor::makeArgsSymbolic(ExecutionState *state) {
 }
 
 void CTXCSExecutor::terminateState(ExecutionState &state) {
-  /* interpreterHandler->incPathsExplored(); */
-
   std::vector<ExecutionState *>::iterator it =
       std::find(addedStates.begin(), addedStates.end(), &state);
   if (it == addedStates.end()) {
@@ -214,7 +199,6 @@ void CTXCSExecutor::terminateState(ExecutionState &state) {
   } else {
     // never reached searcher, just delete immediately
     addedStates.erase(it);
-    // processTree->remove(state.ptreeNode);
     delete &state;
   }
 }
@@ -259,8 +243,6 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
     MemoryObject *mo = globalObjects[g];
     const ObjectState *os = state.addressSpace.findObject(mo);
     ref<Expr> gVal = os->read(0, w);
-    /* llvm::errs() << "adding a modified global: "; */
-    /* gVal->dump(); */
     ps.addGlobalsModified(g, gVal);
   }
 
@@ -274,8 +256,11 @@ void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
                                           enum TerminateReason termReason,
                                           const char *suffix,
                                           const llvm::Twine &info) {
-  llvm::errs() << "terminate this state because error: "
-               << TerminateReasonNames[termReason] << "\n";
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs()
+                                  << "terminate this state because error: "
+                                  << TerminateReasonNames[termReason] << "\n";);
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "terminate this state message: "
+                                           << messaget << "\n";);
   // construct an error path summary
   ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
 
@@ -292,13 +277,7 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   unsigned &instCnter = state.stack.back().instCnterMap[ki];
   ++instCnter;
 
-  /* Instruction *inst = ki->inst; */
-  /* errs() << "this instruction: " << *inst << "\n"; */
-  //errs() << "counter is: " << instCnter << "\n";
-
   if (instCnter >= MaxLoopUnroll) {
-    /* errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n"; */
-    /* errs() << "reach max loop unroll\n"; */
     terminateState(state);
   }
 
@@ -312,7 +291,6 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   ++state.pc;
 }
 
-
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
     : Executor(proto), func(f), summary(new Summary(f)) {
   summary->setContext(ConstantExpr::create(1, Expr::Bool));
@@ -321,30 +299,20 @@ BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
 void BUCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
-  // bindModuleConstants should be called after initializeGlobals
-  //bindModuleConstants();
-
-  //buildConstraintFromStaticContext(es, func);
-
-  // processTree = std::make_unique<PTree>(es);
-
   states.insert(es);
 
   searcher = constructUserSearcher(*this);
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
-  while (!states.empty() && !haltExecution) {
+  while (!states.empty() && !gHaltExecution) {
     ExecutionState &state = searcher->selectState();
-    /* llvm::errs() << "new round, current state is " << &state << "\n"; */
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
     timers.invoke();
     updateStates(&state);
-    /* llvm::errs() << "after this round, remaining " << states.size() */
-    /*              << " states.\n"; */
   }
 
   delete searcher;
@@ -358,7 +326,7 @@ void BUCSExecutor::run() {
 }
 
 void BUCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
-                                                     llvm::Function *f) {
+                                                    llvm::Function *f) {
   std::map<Function *, Env> &context = getGlobalEnvContext();
   Env &env = context[f];
   env.dump(errs());
@@ -381,8 +349,10 @@ void BUCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
     KFunction *kf = kmodule->functionMap[f];
     ref<Expr> arg = getArgumentCell(*es, kf, i).value;
 
-    ref<Expr> expr1 = SgeExpr::create(arg, ConstantExpr::alloc(lower, Expr::Int32));
-    ref<Expr> expr2 = SleExpr::create(arg, ConstantExpr::alloc(upper, Expr::Int32));
+    ref<Expr> expr1 =
+        SgeExpr::create(arg, ConstantExpr::alloc(lower, Expr::Int32));
+    ref<Expr> expr2 =
+        SleExpr::create(arg, ConstantExpr::alloc(upper, Expr::Int32));
 
     ref<Expr> expr = AndExpr::create(expr1, expr2);
 
@@ -402,11 +372,7 @@ ExecutionState *BUCSExecutor::createInitialState(Function *f) {
 }
 
 void BUCSExecutor::initializeGlobals(ExecutionState &state) {
-  allocateGlobalObjects(state);
-  initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
-  //  llvm::errs() << "after initialize globals, dump the address space\n";
-  //  state.addressSpace.dump();
 }
 
 void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
@@ -424,9 +390,6 @@ void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
       globalsMod.push_back(&v);
-      /* llvm::errs() << "make a global variable symbolic: " << name << "\n"; */
-      /* llvm::errs() << "the memory object is: \n"; */
-      /* mo->dump(); */
       const ObjectState *os = state->addressSpace.findObject(mo);
       Expr::Width width = getWidthForLLVMType(v.getType()->getElementType());
       summary->addFormalGlobals(&v, os->read(0, width));
@@ -444,8 +407,6 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
     Expr::Width w = 0;
 
     if (isa<llvm::PointerType>(argTy)) {
-      /* llvm::errs() */
-      /*     << "in BUCSExecutor::makeArgsSymbolic: function arg is a pointer\n"; */
       w = Context::get().getPointerWidth();
     } else {
       w = getWidthForLLVMType(argTy);
@@ -468,14 +429,8 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
       res = mo->getBaseExpr();
-      /* llvm::errs() << "this arg " << name */
-      /*              << " is a pointer, allocate some memory for its pointee\n"; */
     } else {
-      /* llvm::errs() << "BUCSExecutor::makeArgsSymbolic: creating new symbolic " */
-      /*                 "array with size " */
-      /*              << w << "\n"; */
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
-      /* llvm::errs() << "the arg name is " << name << "\n"; */
       const Array *array =
           arrayCache.CreateArray(name, Expr::getMinBytesForWidth(w));
       res = Expr::createTempRead(array, w);
@@ -498,13 +453,12 @@ void BUCSExecutor::terminateState(ExecutionState &state) {
   } else {
     // never reached searcher, just delete immediately
     addedStates.erase(it);
-    // processTree->remove(state.ptreeNode);
     delete &state;
   }
 }
 
 void BUCSExecutor::terminateStateEarly(ExecutionState &state,
-                                        const Twine &message) {
+                                       const Twine &message) {
   // this state has been terminated early, it has no contricution to the summary
   // lib, just throw it.
   terminateState(state);
@@ -543,8 +497,6 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
     MemoryObject *mo = globalObjects[g];
     const ObjectState *os = state.addressSpace.findObject(mo);
     ref<Expr> gVal = os->read(0, w);
-    /* llvm::errs() << "adding a modified global: "; */
-    /* gVal->dump(); */
     ps.addGlobalsModified(g, gVal);
   }
 
@@ -554,12 +506,12 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
 }
 
 void BUCSExecutor::terminateStateOnError(ExecutionState &state,
-                                          const llvm::Twine &messaget,
-                                          enum TerminateReason termReason,
-                                          const char *suffix,
-                                          const llvm::Twine &info) {
-  llvm::errs() << "terminate this state because error: "
-               << TerminateReasonNames[termReason] << "\n";
+                                         const llvm::Twine &messaget,
+                                         enum TerminateReason termReason,
+                                         const char *suffix,
+                                         const llvm::Twine &info) {
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "terminate this state because error: "
+               << TerminateReasonNames[termReason] << "\n";);
   // construct an error path summary
   ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
 
@@ -571,7 +523,7 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
   terminateState(state);
 
   if (shouldExitOn(termReason))
-    haltExecution = true;
+    gHaltExecution = true;
 }
 
 void BUCSExecutor::stepInstruction(ExecutionState &state) {
@@ -579,13 +531,7 @@ void BUCSExecutor::stepInstruction(ExecutionState &state) {
   unsigned &instCnter = state.stack.back().instCnterMap[ki];
   ++instCnter;
 
-  /* Instruction *inst = ki->inst; */
-  /* errs() << "this instruction: " << *inst << "\n"; */
-  //errs() << "counter is: " << instCnter << "\n";
-
   if (instCnter >= MaxLoopUnroll) {
-    /* errs() << "MaxLoopUnroll is " << MaxLoopUnroll << "\n"; */
-    /* errs() << "reach max loop unroll\n"; */
     terminateState(state);
   }
 

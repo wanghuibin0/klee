@@ -239,6 +239,8 @@ bool SpecialFunctionHandler::handle(ExecutionState &state,
 std::string
 SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
                                             ref<Expr> addressExpr) {
+  /* llvm::errs() << "SpecialFunctionHandler::readStringAtAddress: state.addressspace:\n"; */
+  /* state.addressSpace.dumpFirst(); */
   ObjectPair op;
   addressExpr = executor.toUnique(state, addressExpr);
   if (!isa<ConstantExpr>(addressExpr)) {

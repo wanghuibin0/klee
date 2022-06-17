@@ -16,10 +16,7 @@ extern llvm::cl::opt<InterpreterType> InterpreterToUse;
 class CTXCSESummaryManager : public SummaryManager {
 public:
   // ctors
-  CTXCSESummaryManager(const Executor &mainExecutor)
-      : summaryLib(), proto(mainExecutor) {
-    proto.setSummaryManager(this);
-  }
+  CTXCSESummaryManager() = default;
 
   Summary *getSummary(ExecutionState &es, llvm::Function *f) override;
 
@@ -28,16 +25,12 @@ private:
 
 private:
   std::map<llvm::Function *, std::unique_ptr<Summary>> summaryLib;
-  Executor proto; // this will be prototypes of all future summary executors
 };
 
 class BUCSESummaryManager : public SummaryManager {
 public:
   // ctors
-  BUCSESummaryManager(const Executor &mainExecutor)
-      : summaryLib(), proto(mainExecutor) {
-    proto.setSummaryManager(this);
-  }
+  BUCSESummaryManager() = default;
 
   Summary *getSummary(ExecutionState &es, llvm::Function *f) override;
 
@@ -46,7 +39,6 @@ private:
 
 private:
   std::map<llvm::Function *, std::unique_ptr<Summary>> summaryLib;
-  Executor proto; // this will be prototypes of all future summary executors
 };
 } // namespace klee
 

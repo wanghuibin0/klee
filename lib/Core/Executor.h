@@ -88,6 +88,8 @@ class Summary;
 class SummaryManager;
 class CallCSEProxy;
 
+extern bool gHaltExecution;
+
 /// \todo Add a context object to keep track of data only live
 /// during an instruction step. Should contain addedStates,
 /// removedStates, and haltExecution, among others.
@@ -530,7 +532,7 @@ public:
 
   /*** Runtime options ***/
 
-  void setHaltExecution(bool value) override { haltExecution = value; }
+  void setHaltExecution(bool value) override { gHaltExecution = value; }
 
   void setInhibitForking(bool value) override { inhibitForking = value; }
 

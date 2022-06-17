@@ -1417,14 +1417,6 @@ int main(int argc, char **argv, char **envp) {
     interpreter->setReplayPath(&replayPath);
   }
 
-  // for compostional SE
-  // create and set SummaryManager
-
-  // create SummaryManager
-  Executor *e = static_cast<Executor*>(interpreter);
-  SummaryManager *sm = SummaryManager::createSummaryManager(*e);
-  e->setSummaryManager(sm);
-
   auto startTime = std::time(nullptr);
   { // output clock info and start time
     std::stringstream startInfo;
@@ -1556,7 +1548,6 @@ int main(int argc, char **argv, char **envp) {
   delete[] pArgv;
 
   delete interpreter;
-  delete sm;
 
   uint64_t queries =
     *theStatisticManager->getStatisticByName("Queries");

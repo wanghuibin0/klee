@@ -153,6 +153,11 @@ namespace klee {
         x.second->print();
       }
     }
+    void dumpFirst() const {
+      for (auto x : objects) {
+        x.first->dump();
+      }
+    }
   };
   inline void swap(AddressSpace &a, AddressSpace &b) {
     using std::swap;
