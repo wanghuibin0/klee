@@ -32,7 +32,6 @@ cl::opt<unsigned>
 
 CTXCSExecutor::CTXCSExecutor(const Executor &proto, llvm::Function *f)
     : Executor(proto), func(f), summary(new Summary(f)) {
-  summary->setContext(ConstantExpr::create(1, Expr::Bool));
 }
 
 void CTXCSExecutor::run() {
@@ -293,7 +292,6 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
 
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
     : Executor(proto), func(f), summary(new Summary(f)) {
-  summary->setContext(ConstantExpr::create(1, Expr::Bool));
 }
 
 void BUCSExecutor::run() {

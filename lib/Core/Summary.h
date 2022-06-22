@@ -101,7 +101,7 @@ class Summary {
   std::vector<ErrorPathSummary> errorPathSummaries;
 
 public:
-  Summary(llvm::Function *f) : function(f) {}
+  Summary(llvm::Function *f) : function(f), context(ConstantExpr::create(1, Expr::Bool)) {}
 
   void addNormalPathSummary(const NormalPathSummary ps) {
     normalPathSummaries.push_back(ps);
@@ -116,7 +116,6 @@ public:
     }
     context = OrExpr::create(context, aContext);
   }
-  void setContext(ref<Expr> c) { context = c; }
   void addArg(llvm::Value *farg, ref<Expr> arg) { args.push_back(arg); }
 
   llvm::Function *getFunction() const { return function; }
@@ -126,7 +125,7 @@ public:
     return normalPathSummaries;
   }
   const std::vector<ErrorPathSummary> &getErrorPathSummaries() const {
-    return errorPathSummaries;
+   return errorPathSummaries;
   }
   const std::map<const llvm::GlobalValue *, ref<Expr>> &getFormalGlobals() const {
     return globals;
