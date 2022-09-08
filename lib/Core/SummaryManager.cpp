@@ -26,7 +26,7 @@ cl::opt<InterpreterType> InterpreterToUse(
             NOCSE, "none",
             "do not compositional, only normal symbolic executor(default)")
             KLEE_LLVM_CL_VAL_END),
-    cl::init(NOCSE), cl::cat(InterpreterCat));
+    cl::init(BUCSE), cl::cat(InterpreterCat));
 } // namespace klee
 
 SummaryManager *
@@ -97,6 +97,19 @@ std::unique_ptr<Summary> BUCSESummaryManager::computeSummary(llvm::Function *f) 
   executor->run();
   std::unique_ptr<Summary> sum = executor->extractSummary();
   delete executor;
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "generating a summary:\n";);
+  KLEE_DEBUG_WITH_TYPE("cse", sum->dump(););
   return sum;
 }
 
+void BUCSESummaryManager::dump() {
+  llvm::errs() << "in CTXCSESummaryManager::dump()";
+  for (const auto &x : summaryLib) {
+    llvm::errs() << "summary for function: " << x.first->getName() << "\n";
+    x.second->dump();
+  }
+}
+
+void CTXCSESummaryManager::dump() {
+  llvm::errs() << "in CTXCSESummaryManager::dump()";
+}

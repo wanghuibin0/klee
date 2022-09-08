@@ -178,6 +178,9 @@ protected:
   /// Map of globals to their representative memory object.
   std::map<const llvm::GlobalValue *, MemoryObject *> globalObjects;
 
+  /// Reversion of Map of globals to their representative memory object.
+  std::map<const MemoryObject *, const llvm::GlobalValue *> globalObjectsReversed;
+
   /// Map of globals to their bound address. This also includes
   /// globals that have no representative object (i.e. functions).
   std::map<const llvm::GlobalValue *, ref<ConstantExpr>> globalAddresses;
@@ -346,7 +349,7 @@ protected:
 
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
-  void executeMemoryOperation(ExecutionState &state, bool isWrite,
+  virtual void executeMemoryOperation(ExecutionState &state, bool isWrite,
                               ref<Expr> address,
                               ref<Expr> value /* undef if read */,
                               KInstruction *target /* undef if write */);

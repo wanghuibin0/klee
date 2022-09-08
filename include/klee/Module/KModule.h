@@ -153,7 +153,7 @@ namespace klee {
     void checkModule();
 
     bool isSuitableForCSE(llvm::Function *f) {
-      return cseSuitableFunctions.find(f) != cseSuitableFunctions.end();
+      return cseSuitableFunctions.count(f);
     }
 
     void collectCseFunctions();

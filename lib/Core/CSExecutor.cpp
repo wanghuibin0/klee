@@ -20,7 +20,8 @@ using namespace llvm;
 
 namespace klee {
 extern cl::OptionCategory TerminationCat;
-}
+extern cl::opt<bool> SimplifySymIndices;
+} // namespace klee
 
 namespace {
 cl::opt<unsigned>
@@ -31,8 +32,7 @@ cl::opt<unsigned>
 }
 
 CTXCSExecutor::CTXCSExecutor(const Executor &proto, llvm::Function *f)
-    : Executor(proto), func(f), summary(new Summary(f)) {
-}
+    : Executor(proto), func(f), summary(new Summary(f)) {}
 
 void CTXCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
@@ -117,8 +117,6 @@ ExecutionState *CTXCSExecutor::createInitialState(Function *f) {
 }
 
 void CTXCSExecutor::initializeGlobals(ExecutionState &state) {
-  allocateGlobalObjects(state);
-  initializeGlobalAliases();
   makeGlobalsSymbolic(&state);
 }
 
@@ -291,8 +289,7 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
 }
 
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
-    : Executor(proto), func(f), summary(new Summary(f)) {
-}
+    : Executor(proto), func(f), summary(new Summary(f)) {}
 
 void BUCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
@@ -316,11 +313,7 @@ void BUCSExecutor::run() {
   delete searcher;
   searcher = nullptr;
 
-  // processTree = nullptr;
-
   return;
-  // the computed summary has been stored in summaryLib path by path online,
-  // so it is unnecessary to store them explicitly.
 }
 
 void BUCSExecutor::buildConstraintFromStaticContext(ExecutionState *es,
@@ -463,12 +456,13 @@ void BUCSExecutor::terminateStateEarly(ExecutionState &state,
 }
 
 void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
-  // this state has been terminate normally because of encountering a ret
+  // this state has been terminated normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
 
   // we use prevPC because pc has been updated in stepInstruction
   KInstruction *ki = state.prevPC;
   Instruction *i = ki->inst;
+  llvm::outs() << "Instruction is : " << *i << "\n";
   ReturnInst *ri = cast<ReturnInst>(i);
   bool isVoidReturn = (ri->getNumOperands() == 0);
 
@@ -508,8 +502,9 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
                                          enum TerminateReason termReason,
                                          const char *suffix,
                                          const llvm::Twine &info) {
-  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "terminate this state because error: "
-               << TerminateReasonNames[termReason] << "\n";);
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs()
+                                  << "terminate this state because error: "
+                                  << TerminateReasonNames[termReason] << "\n";);
   // construct an error path summary
   ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
 
@@ -541,4 +536,137 @@ void BUCSExecutor::stepInstruction(ExecutionState &state) {
   ++state.steppedInstructions;
   state.prevPC = state.pc;
   ++state.pc;
+}
+
+void BUCSExecutor::executeMemoryOperation(
+    ExecutionState &state, bool isWrite, ref<Expr> address,
+    ref<Expr> value /* undef if read */,
+    KInstruction *target /* undef if write */) {
+  KLEE_DEBUG_WITH_TYPE(
+      "cse",
+      llvm::errs() << "entering BUCSExecutor::executeMemoryOperation\n";);
+  Expr::Width type = (isWrite ? value->getWidth()
+                              : getWidthForLLVMType(target->inst->getType()));
+  unsigned bytes = Expr::getMinBytesForWidth(type);
+
+  assert(SimplifySymIndices == false &&
+         "SimplifySymIndices must be false in cse");
+  address = optimizer.optimizeExpr(address, true);
+
+  // fast path: single in-bounds resolution
+  ObjectPair op;
+  bool success;
+  solver->setTimeout(coreSolverTimeout);
+  if (!state.addressSpace.resolveOne(state, solver.get(), address, op,
+                                     success)) {
+    address = toConstant(state, address, "resolveOne failure");
+    success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
+  }
+  solver->setTimeout(time::Span());
+
+  if (success) {
+    const MemoryObject *mo = op.first;
+
+    KLEE_DEBUG_WITH_TYPE("cse", mo->dump(););
+
+    ref<Expr> offset = mo->getOffsetExpr(address);
+    ref<Expr> check = mo->getBoundsCheckOffset(offset, bytes);
+    check = optimizer.optimizeExpr(check, true);
+
+    bool inBounds;
+    solver->setTimeout(coreSolverTimeout);
+    bool success = solver->mustBeTrue(state.constraints, check, inBounds,
+                                      state.queryMetaData);
+    solver->setTimeout(time::Span());
+    if (!success) {
+      state.pc = state.prevPC;
+      terminateStateEarly(state, "Query timed out (bounds check).");
+      return;
+    }
+
+    if (inBounds) {
+      const ObjectState *os = op.second;
+      if (isWrite) {
+        if (os->readOnly) {
+          terminateStateOnError(state, "memory error: object read only",
+                                ReadOnly);
+        } else {
+          ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+          wos->write(offset, value);
+
+          if (globalObjectsReversed.count(mo)) {
+            objectsWritten.push_back(globalObjectsReversed.at(mo));
+          }
+        }
+      } else {
+        ref<Expr> result = os->read(offset, type);
+
+        if (interpreterOpts.MakeConcreteSymbolic)
+          result = replaceReadWithSymbolic(state, result);
+
+        bindLocal(target, state, result);
+
+        if (globalObjectsReversed.count(mo)) {
+          objectsRead.push_back(globalObjectsReversed.at(mo));
+        }
+      }
+
+      return;
+    }
+  }
+
+  address = optimizer.optimizeExpr(address, true);
+  ResolutionList rl;
+  solver->setTimeout(coreSolverTimeout);
+  bool incomplete = state.addressSpace.resolve(state, solver.get(), address, rl,
+                                               0, coreSolverTimeout);
+  solver->setTimeout(time::Span());
+
+  // XXX there is some query wasteage here. who cares?
+  ExecutionState *unbound = &state;
+
+  for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
+    const MemoryObject *mo = i->first;
+    const ObjectState *os = i->second;
+    ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
+
+    StatePair branches = fork(*unbound, inBounds, true);
+    ExecutionState *bound = branches.first;
+
+    // bound can be 0 on failure or overlapped
+    if (bound) {
+      if (isWrite) {
+        if (os->readOnly) {
+          terminateStateOnError(*bound, "memory error: object read only",
+                                ReadOnly);
+        } else {
+          ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
+          wos->write(mo->getOffsetExpr(address), value);
+          if (globalObjectsReversed.count(mo)) {
+            objectsWritten.push_back(globalObjectsReversed.at(mo));
+          }
+        }
+      } else {
+        ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
+        bindLocal(target, *bound, result);
+        if (globalObjectsReversed.count(mo)) {
+          objectsRead.push_back(globalObjectsReversed.at(mo));
+        }
+      }
+    }
+
+    unbound = branches.second;
+    if (!unbound)
+      break;
+  }
+
+  // XXX should we distinguish out of bounds and overlapped cases?
+  if (unbound) {
+    if (incomplete) {
+      terminateStateEarly(*unbound, "Query timed out (resolve).");
+    } else {
+      terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
+                            NULL, getAddressInfo(*unbound, address));
+    }
+  }
 }

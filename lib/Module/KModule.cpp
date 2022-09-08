@@ -419,6 +419,7 @@ static const char *dontCseFuncList[] = {
   "klee_range",
   "klee_init_fds",
   "__sym_uint32",
+  "main",
 
   "_ZTVN10__cxxabiv117__class_type_infoE",
   "_ZTVN10__cxxabiv120__si_class_type_infoE",
@@ -507,8 +508,6 @@ bool KModule::checkCseSuitable(llvm::Function &F) {
   /*   return false; */
 
   if (F.isIntrinsic())
-    return false;
-  if (F.getName() == "main")
     return false;
   auto *retTy = F.getReturnType();
   if (retTy->isPointerTy())

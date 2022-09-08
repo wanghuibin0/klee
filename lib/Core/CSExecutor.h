@@ -70,12 +70,18 @@ private:
                                      const llvm::Twine &longMessage = "") override;
 
   void stepInstruction(ExecutionState &state) override;
+  void executeMemoryOperation(ExecutionState &state, bool isWrite,
+                              ref<Expr> address,
+                              ref<Expr> value /* undef if read */,
+                              KInstruction *target /* undef if write */) override;
 
 private:
   llvm::Function *func;
   std::unique_ptr<Summary> summary;
   std::vector<const llvm::GlobalValue*> globalsMod;
   ConstraintSet context;
+  std::vector<const llvm::GlobalValue *> objectsWritten;
+  std::vector<const llvm::GlobalValue *> objectsRead;
 };
 } // namespace klee
 #endif

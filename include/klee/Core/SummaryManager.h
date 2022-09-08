@@ -19,6 +19,7 @@ public:
   static SummaryManager *createSummaryManager();
   virtual Summary *getSummary(ExecutionState &es, llvm::Function *f) = 0;
   void setProto(Executor &e);
+  virtual void dump() = 0;
 protected:
   std::unique_ptr<Executor> proto;
 };

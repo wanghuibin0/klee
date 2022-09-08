@@ -127,6 +127,12 @@ cl::opt<std::string>
             cl::desc("Halt execution after the specified duration.  "
                      "Set to 0s to disable (default=0s)"),
             cl::init("0s"), cl::cat(TerminationCat));
+
+cl::opt<bool>
+    SimplifySymIndices("simplify-sym-indices", cl::init(false),
+                       cl::desc("Simplify symbolic accesses using equalities "
+                                "from other constraints (default=false)"),
+                       cl::cat(SolvingCat));
 } // namespace klee
 
 namespace {
@@ -157,12 +163,6 @@ cl::opt<unsigned> MaxSymArraySize(
         "If a symbolic array exceeds this size (in bytes), symbolic addresses "
         "into this array are concretized.  Set to 0 to disable (default=0)"),
     cl::init(0), cl::cat(SolvingCat));
-
-cl::opt<bool>
-    SimplifySymIndices("simplify-sym-indices", cl::init(false),
-                       cl::desc("Simplify symbolic accesses using equalities "
-                                "from other constraints (default=false)"),
-                       cl::cat(SolvingCat));
 
 cl::opt<bool>
     EqualitySubstitution("equality-substitution", cl::init(true),
@@ -507,7 +507,9 @@ Executor::Executor(const Executor &e)
       symPathWriter(0),
       specialFunctionHandler(new SpecialFunctionHandler(*this)),
       timers(e.timers),
-      /* all executors use a common kmodule, the proto executor must be captured after globals are inited, i.e. after calling allocateGlobalObjects in runFunctionAsMain*/
+      /* all executors use a common kmodule, the proto executor must be captured
+         after globals are inited, i.e. after calling allocateGlobalObjects in
+         runFunctionAsMain*/
       globalObjects(e.globalObjects), globalAddresses(e.globalAddresses),
       /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
       atMemoryLimit(false), inhibitForking(false), haltExecution(false),
@@ -768,11 +770,9 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
     if (!mo)
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
+    globalObjectsReversed.emplace(mo, &v);
     globalAddresses.emplace(&v, mo->getBaseExpr());
     mo->setName(v.getName());
-    // llvm::errs() << "in Executor::allocateGlobalObjects, allocating a new
-    // memoryobject \n"; mo->dump(); llvm::errs() << "the coresponding variable
-    // is :" << v.getName() << "\n";
   }
 }
 
@@ -1226,7 +1226,8 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
 
 bool Executor::addConstraintMayFail(ExecutionState &state,
                                     ref<Expr> condition) {
-  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "Executor::addConstraintMayFail: ";);
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs()
+                                  << "Executor::addConstraintMayFail: ";);
   KLEE_DEBUG_WITH_TYPE("cse", condition->dump(););
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(condition)) {
     if (!CE->isTrue()) {
@@ -1687,22 +1688,15 @@ ref<klee::ConstantExpr> Executor::getEhTypeidFor(ref<Expr> type_info) {
 bool Executor::executeCallCompositionally(ExecutionState &state,
                                           KInstruction *ki, Function *f,
                                           std::vector<ref<Expr>> &arguments) {
-  /* llvm::errs() << "compositional execution for function " << f->getName() */
-  /*              << "\n"; */
-
   SummaryManager *sm = summaryManager;
   Summary *summary = sm->getSummary(state, f);
   if (summary && checkCompatible(state, *summary)) {
     // should prepare actual arguments before application.
-    /* llvm::errs() << "dumping summary before apply summary\n"; */
-    /* //summary->dump(); */
     applySummary(state, arguments, summary);
-    /* llvm::errs() << "success: compositional execution for function " */
-    /*              << f->getName() << "\n"; */
+    return true;
   } else {
-    /* llvm::errs() << "cannot get valid summary, fallback to normal SE\n"; */
+    return false;
   }
-  return true;
 }
 
 void Executor::applySummary(ExecutionState &state,
@@ -1834,15 +1828,16 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       }
     }
   } else {
-    static bool isCSEBegin = false;
-    if (f->getName() == "__klee_posix_wrapped_main") {
-      isCSEBegin = true;
-    }
+    /* static bool isCSEBegin = false; */
+    /* if (f->getName() == "__klee_posix_wrapped_main") { */
+    /*   isCSEBegin = true; */
+    /* } */
 
     /* llvm::errs() << "executing funciton calls: " << f->getName() << "\n"; */
     if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f) /*&&
         isCSEBegin*/) {
-      if (executeCallCompositionally(state, ki, f, arguments))
+      bool success = executeCallCompositionally(state, ki, f, arguments);
+      if (success)
         return;
     }
 
@@ -3984,7 +3979,8 @@ ref<Expr> Executor::replaceReadWithSymbolic(ExecutionState &state,
                              Expr::getMinBytesForWidth(e->getWidth()));
   ref<Expr> res = Expr::createTempRead(array, e->getWidth());
   ref<Expr> eq = NotOptimizedExpr::create(EqExpr::create(e, res));
-  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "Making symbolic: " << eq << "\n";);
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs()
+                                  << "Making symbolic: " << eq << "\n";);
   state.addConstraint(eq);
   return res;
 }
@@ -4497,6 +4493,7 @@ void Executor::runFunctionAsMain(Function *f, int argc, char **argv,
   globalObjects.clear();
   globalAddresses.clear();
 
+  sm->dump();
   delete sm;
 
   if (statsTracker)
@@ -4881,8 +4878,9 @@ void Executor::applySummaryToAState(ExecutionState &es,
       addedStates.push_back(newState);
   }
 
-  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "applying a error summary, it belongs to "
-               << sum.getFunction()->getName() << "\n";);
+  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs()
+                                  << "applying a error summary, it belongs to "
+                                  << sum.getFunction()->getName() << "\n";);
   for (auto eps : errorPathSummaries) {
     // record the pre condition and termination reason, but do not generate new
     // states.
@@ -4951,7 +4949,8 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
   ExecutionState *newState = new ExecutionState(es);
   for (auto pre : nps.getPreCond()) {
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
-    if (!success) return;
+    if (!success)
+      return;
   }
   addedStates.push_back(newState);
   terminateStateOnError(*newState, "apply error path summary",

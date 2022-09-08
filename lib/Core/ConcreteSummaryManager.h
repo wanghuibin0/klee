@@ -19,6 +19,7 @@ public:
   CTXCSESummaryManager() = default;
 
   Summary *getSummary(ExecutionState &es, llvm::Function *f) override;
+  void dump() override;
 
 private:
   std::unique_ptr<Summary> computeSummary(llvm::Function *f);
@@ -33,6 +34,8 @@ public:
   BUCSESummaryManager() = default;
 
   Summary *getSummary(ExecutionState &es, llvm::Function *f) override;
+
+  void dump() override;
 
 private:
   std::unique_ptr<Summary> computeSummary(llvm::Function *f);
