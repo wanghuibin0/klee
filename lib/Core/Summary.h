@@ -2,12 +2,10 @@
 #define SUMMARY_H
 
 #include "klee/Expr/Constraints.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalValue.h"
 
-namespace llvm {
-}
+namespace llvm {}
 
 namespace klee {
 
@@ -71,11 +69,13 @@ enum ErrorReason {
   UncaughtException,
   UnexpectedException,
   Unhandled,
+  Exit, // added because we want to capture `exit` in CSE.
 };
 
 class ErrorPathSummary {
   ConstraintSet preCond;
   enum ErrorReason tr;
+  std::map<const llvm::GlobalValue *, ref<Expr>> globalsMod;
 
 public:
   ErrorPathSummary(ConstraintSet &preCond, enum ErrorReason tr)
@@ -89,6 +89,11 @@ public:
       x->dump();
     }
     llvm::errs() << "terminate reason is: " << tr << "\n";
+    llvm::errs() << "globals modified:\n";
+    for (auto x : globalsMod) {
+      llvm::errs() << x.first->getName() << ": ";
+      x.second->dump();
+    }
   }
 };
 
@@ -101,7 +106,8 @@ class Summary {
   std::vector<ErrorPathSummary> errorPathSummaries;
 
 public:
-  Summary(llvm::Function *f) : function(f), context(ConstantExpr::create(1, Expr::Bool)) {}
+  Summary(llvm::Function *f)
+      : function(f), context(ConstantExpr::create(1, Expr::Bool)) {}
 
   void addNormalPathSummary(const NormalPathSummary ps) {
     normalPathSummaries.push_back(ps);
@@ -125,9 +131,10 @@ public:
     return normalPathSummaries;
   }
   const std::vector<ErrorPathSummary> &getErrorPathSummaries() const {
-   return errorPathSummaries;
+    return errorPathSummaries;
   }
-  const std::map<const llvm::GlobalValue *, ref<Expr>> &getFormalGlobals() const {
+  const std::map<const llvm::GlobalValue *, ref<Expr>> &
+  getFormalGlobals() const {
     return globals;
   }
   void addFormalGlobals(const llvm::GlobalValue *gv, ref<Expr> e) {

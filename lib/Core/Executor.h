@@ -140,7 +140,7 @@ protected:
 
   SummaryManager *summaryManager;
 
-  /// Assumes ownership of the created array objects
+  /// Assumes sharing of the created array objects by all executors
   ArrayCache &arrayCache;
 
   // ExternalDispatcher *externalDispatcher;
