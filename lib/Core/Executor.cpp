@@ -9,8 +9,6 @@
 
 #include "Executor.h"
 
-#include "Summary.h"
-
 #include "Context.h"
 #include "CoreStats.h"
 #include "ExecutionState.h"
@@ -425,6 +423,7 @@ const char *Executor::TerminateReasonNames[] = {
     [UncaughtException] = "uncaught_exception",
     [UnexpectedException] = "unexpected_exception",
     [Unhandled] = "xxx",
+    [Exit] = "exit",
 };
 
 namespace klee {

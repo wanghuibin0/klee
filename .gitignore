@@ -35,3 +35,7 @@ autom4te.cache/
 examples/
 tags
 .ccls*
+
+.vim/**
+.cache/**
+compile_commands.json

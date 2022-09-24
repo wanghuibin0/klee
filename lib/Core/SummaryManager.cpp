@@ -1,11 +1,11 @@
 #include "klee/Core/SummaryManager.h"
 #include "CSExecutor.h"
 #include "ConcreteSummaryManager.h"
-#include "Summary.h"
 #include "klee/Support/ErrorHandling.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "klee/Support/Debug.h"
 
@@ -101,8 +101,6 @@ BUCSESummaryManager::computeSummary(llvm::Function *f) {
   executor->run();
   std::unique_ptr<Summary> sum = executor->extractSummary();
   delete executor;
-  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "generating a summary:\n";);
-  KLEE_DEBUG_WITH_TYPE("cse", sum->dump(););
   return sum;
 }
 

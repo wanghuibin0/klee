@@ -5,7 +5,6 @@
 #include "StatsTracker.h"
 
 #include "../Module/IntervalInfo/Env.h"
-#include "Summary.h"
 #include "klee/Core/SummaryManager.h"
 #include "klee/Module/EnvContext.h"
 
@@ -251,7 +250,7 @@ void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
   KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "terminate this state message: "
                                            << messaget << "\n";);
   // construct an error path summary
-  ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
+  ErrorPathSummary eps(state.constraints, termReason);
 
   // since the error path will be terminated immediately, we do not handle
   // globals for simplicity.
@@ -266,9 +265,9 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   unsigned &instCnter = state.stack.back().instCnterMap[ki];
   ++instCnter;
 
-  if (instCnter >= MaxLoopUnroll) {
-    terminateState(state);
-  }
+  /* if (instCnter >= MaxLoopUnroll) { */
+  /*   terminateState(state); */
+  /* } */
 
   printDebugInstructions(state);
   if (statsTracker)

@@ -2,7 +2,6 @@
 #define KLEE_CONCRETESUMMARYMANAGER_H
 
 #include "Executor.h"
-#include "Summary.h"
 #include "klee/Core/SummaryManager.h"
 
 #include <map>

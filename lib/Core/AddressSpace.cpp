@@ -52,9 +52,9 @@ ObjectState *AddressSpace::getWriteable(const MemoryObject *mo,
   return newObjectState.get();
 }
 
-/// 
+///
 
-bool AddressSpace::resolveOne(const ref<ConstantExpr> &addr, 
+bool AddressSpace::resolveOne(const ref<ConstantExpr> &addr,
                               ObjectPair &result) const {
   uint64_t address = addr->getZExtValue();
   MemoryObject hack(address);
@@ -105,11 +105,11 @@ bool AddressSpace::resolveOne(ExecutionState &state,
     }
 
     // didn't work, now we have to search
-       
+
     MemoryMap::iterator oi = objects.upper_bound(&hack);
     MemoryMap::iterator begin = objects.begin();
     MemoryMap::iterator end = objects.end();
-      
+
     MemoryMap::iterator start = oi;
     while (oi!=begin) {
       --oi;
@@ -298,8 +298,8 @@ bool AddressSpace::resolve(ExecutionState &state, TimingSolver *solver,
 // then its concrete cache byte isn't being used) but is just a hack.
 
 void AddressSpace::copyOutConcretes() {
-  for (MemoryMap::iterator it = objects.begin(), ie = objects.end(); 
-       it != ie; ++it) {
+    for (MemoryMap::iterator it = objects.begin(), ie = objects.end();
+         it != ie; ++it) {
     const MemoryObject *mo = it->first;
 
     if (!mo->isUserSpecified) {
@@ -346,4 +346,3 @@ bool AddressSpace::copyInConcrete(const MemoryObject *mo, const ObjectState *os,
 bool MemoryObjectLT::operator()(const MemoryObject *a, const MemoryObject *b) const {
   return a->address < b->address;
 }
-

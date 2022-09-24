@@ -11,5 +11,10 @@ cl::opt<unsigned>
                   cl::desc("Refuse to fork when above this amount of "
                            "loop unroll times (default=5)"),
                   cl::init(5), cl::cat(CompExCat));
+cl::opt<unsigned>
+    MaxStatesInCse("max-states-in-cse",
+                   cl::desc("Inhibit forking when too many states are "
+                            "generated during CSE (default=10)"),
+                   cl::init(30), cl::cat(CompExCat));
 
 } // namespace klee

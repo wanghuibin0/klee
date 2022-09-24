@@ -16,6 +16,7 @@
 #include "klee/Expr/Expr.h"
 
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Format.h"
 
 #include <string>
 #include <vector>
@@ -167,7 +168,7 @@ public:
 
   void dump() const {
     llvm::errs() << "id: " << id << "\n";
-    llvm::errs() << "address: " << address << "\n";
+    llvm::errs() << "address: " << llvm::format_hex(address, 18) << "\n";
 
     llvm::errs() << "size: " << size << "\n";
     llvm::errs() << "name: " << name << "\n";

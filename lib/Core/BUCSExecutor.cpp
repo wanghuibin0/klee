@@ -5,7 +5,6 @@
 #include "StatsTracker.h"
 
 #include "../Module/IntervalInfo/Env.h"
-#include "Summary.h"
 #include "klee/Core/SummaryManager.h"
 #include "klee/Module/EnvContext.h"
 
@@ -13,6 +12,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace klee;
 using namespace llvm;
@@ -20,6 +20,7 @@ using namespace llvm;
 namespace klee {
   extern cl::opt<bool> SimplifySymIndices;
   extern cl::opt<unsigned> MaxLoopUnroll;
+  extern cl::opt<unsigned> MaxStatesInCse;
 }
 
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
@@ -42,10 +43,18 @@ void BUCSExecutor::run() {
     executeInstruction(state, ki);
     timers.invoke();
     updateStates(&state);
+
+    if (summary->getNumOfSummaries() + states.size() >= MaxStatesInCse) {
+      setInhibitForking(true);
+    }
   }
 
   delete searcher;
   searcher = nullptr;
+
+  llvm::errs() << "finished generating summary for function " << func->getName() << "\n\tdumping it:\n";
+  summary->dump();
+  llvm::errs() << "summary has been dumped!\n";
 
   return;
 }
@@ -215,7 +224,7 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
                                   << "terminate this state because error: "
                                   << TerminateReasonNames[termReason] << "\n";);
   // construct an error path summary
-  ErrorPathSummary eps(state.constraints, (enum ErrorReason)termReason);
+  ErrorPathSummary eps(state.constraints, termReason);
 
   // since the error path will be terminated immediately, we do not handle
   // globals for simplicity.
@@ -233,9 +242,10 @@ void BUCSExecutor::stepInstruction(ExecutionState &state) {
   unsigned &instCnter = state.stack.back().instCnterMap[ki];
   ++instCnter;
 
-  if (instCnter >= MaxLoopUnroll) {
-    terminateState(state);
-  }
+  /* if (instCnter >= MaxLoopUnroll) { */
+  /*   llvm::errs() << "reaching max loop unroll " << MaxLoopUnroll << " when summarizing function " << this->func->getName() << "\n"; */
+  /*   setInhibitForking(true); */
+  /* } */
 
   printDebugInstructions(state);
   if (statsTracker)
@@ -251,9 +261,9 @@ void BUCSExecutor::executeMemoryOperation(
     ExecutionState &state, bool isWrite, ref<Expr> address,
     ref<Expr> value /* undef if read */,
     KInstruction *target /* undef if write */) {
-  KLEE_DEBUG_WITH_TYPE(
-      "cse",
-      llvm::errs() << "entering BUCSExecutor::executeMemoryOperation\n";);
+  /* KLEE_DEBUG_WITH_TYPE( */
+  /*     "cse", */
+  /*     llvm::errs() << "entering BUCSExecutor::executeMemoryOperation\n";); */
   Expr::Width type = (isWrite ? value->getWidth()
                               : getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
@@ -276,7 +286,7 @@ void BUCSExecutor::executeMemoryOperation(
   if (success) {
     const MemoryObject *mo = op.first;
 
-    KLEE_DEBUG_WITH_TYPE("cse", mo->dump(););
+    /* KLEE_DEBUG_WITH_TYPE("cse", mo->dump();); */
 
     ref<Expr> offset = mo->getOffsetExpr(address);
     ref<Expr> check = mo->getBoundsCheckOffset(offset, bytes);
