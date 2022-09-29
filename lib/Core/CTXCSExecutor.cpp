@@ -109,6 +109,7 @@ ExecutionState *CTXCSExecutor::createInitialState(Function *f) {
 }
 
 void CTXCSExecutor::initializeGlobals(ExecutionState &state) {
+  allocateGlobalObjects(state);
   makeGlobalsSymbolic(&state);
 }
 
