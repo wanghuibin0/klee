@@ -509,7 +509,7 @@ Executor::Executor(const Executor &e)
       /* all executors use a common kmodule, the proto executor must be captured
          after globals are inited, i.e. after calling allocateGlobalObjects in
          runFunctionAsMain*/
-      globalObjects(e.globalObjects), globalObjectsReversed(e.globalObjectsReversed), globalAddresses(e.globalAddresses),
+      /* globalObjects(e.globalObjects), globalObjectsReversed(e.globalObjectsReversed), globalAddresses(e.globalAddresses), */
       /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
       atMemoryLimit(false), inhibitForking(false), haltExecution(false),
       ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout),
@@ -1256,7 +1256,7 @@ const Cell &Executor::eval(KInstruction *ki, unsigned index,
   // Determine if this is a constant or not.
   if (vnumber < 0) {
     unsigned index = -vnumber - 2;
-    return kmodule->constantTable[index];
+    return constantTbl[index];
   } else {
     unsigned index = vnumber;
     StackFrame &sf = state.stack.back();
@@ -3441,10 +3441,10 @@ void Executor::bindModuleConstants() {
       bindInstructionConstants(kf->instructions[i]);
   }
 
-  kmodule->constantTable =
+  constantTbl =
       std::unique_ptr<Cell[]>(new Cell[kmodule->constants.size()]);
   for (unsigned i = 0; i < kmodule->constants.size(); ++i) {
-    Cell &c = kmodule->constantTable[i];
+    Cell &c = constantTbl[i];
     c.value = evalConstant(kmodule->constants[i]);
   }
 }

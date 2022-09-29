@@ -138,6 +138,7 @@ protected:
   static const char *TerminateReasonNames[];
 
   std::shared_ptr<KModule> kmodule;
+  std::unique_ptr<Cell[]> constantTbl;
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
 

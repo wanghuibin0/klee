@@ -29,7 +29,8 @@ void CTXCSExecutor::run() {
 
   /* since global MemoryObjects are shared across executors,
    * addresses are unchanged and it's unneccessary to rebuild constant table. */
-  // bindModuleConstants();
+  // update: global MemoryObjects are not shared across executors any more.
+  bindModuleConstants();
 
   buildConstraintFromStaticContext(es, func);
 

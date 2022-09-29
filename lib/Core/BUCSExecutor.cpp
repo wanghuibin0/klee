@@ -31,6 +31,8 @@ BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
 void BUCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
 
+  bindModuleConstants();
+
   states.insert(es);
 
   searcher = constructUserSearcher(*this);
@@ -73,6 +75,7 @@ ExecutionState *BUCSExecutor::createInitialState(Function *f) {
 }
 
 void BUCSExecutor::initializeGlobals(ExecutionState &state) {
+  allocateGlobalObjects(state);
   makeGlobalsSymbolic(&state);
 }
 
