@@ -24,7 +24,9 @@ namespace klee {
 }
 
 BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
-    : Executor(proto), func(f), summary(new Summary(f)) {}
+    : Executor(proto), func(f), summary(new Summary(f)) {
+      errs() << "BUCSE for function " << f->getName() << "\n";
+    }
 
 void BUCSExecutor::run() {
   ExecutionState *es = createInitialState(func);

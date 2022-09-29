@@ -509,18 +509,18 @@ bool KModule::checkCseSuitable(llvm::Function &F) {
 
   if (F.isIntrinsic())
     return false;
-  auto *retTy = F.getReturnType();
-  if (retTy->isPointerTy())
-    return false;
+  // auto *retTy = F.getReturnType();
+  // if (retTy->isPointerTy())
+  //   return false;
 
   if (F.isVarArg())
     return false;
 
-  for (auto it = F.arg_begin(); it != F.arg_end(); ++it) {
-    auto argTy = it->getType();
-    if (argTy->isPointerTy())
-      return false;
-  }
+  // for (auto it = F.arg_begin(); it != F.arg_end(); ++it) {
+  //   auto argTy = it->getType();
+  //   if (argTy->isPointerTy())
+  //     return false;
+  // }
   return true;
 }
 
