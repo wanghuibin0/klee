@@ -509,7 +509,7 @@ Executor::Executor(const Executor &e)
       /* all executors use a common kmodule, the proto executor must be captured
          after globals are inited, i.e. after calling allocateGlobalObjects in
          runFunctionAsMain*/
-      globalObjects(e.globalObjects), globalAddresses(e.globalAddresses),
+      globalObjects(e.globalObjects), globalObjectsReversed(e.globalObjectsReversed), globalAddresses(e.globalAddresses),
       /*processTree(0),*/ replayKTest(0), replayPath(0), usingSeeds(0),
       atMemoryLimit(false), inhibitForking(false), haltExecution(false),
       ivcEnabled(false), coreSolverTimeout(e.coreSolverTimeout),
@@ -4183,9 +4183,6 @@ void Executor::executeMemoryOperation(
                               : getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
-  //  llvm::errs() << "execute memory operation, dump the address\n";
-  //  address->dump();
-
   if (SimplifySymIndices) {
     if (!isa<ConstantExpr>(address))
       address = ConstraintManager::simplifyExpr(state.constraints, address);
@@ -4909,7 +4906,7 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
-  for (auto pre : nps.getPreCond()) {
+  for (auto pre : nps.preCond) {
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (success == false) {
       delete newState;
@@ -4918,14 +4915,14 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   }
 
   // for ret result
-  if (!nps.getIsVoidRet()) {
-    auto retVal = replaceMap.visit(nps.getRetVal());
+  if (!nps.isVoidRet) {
+    auto retVal = replaceMap.visit(nps.retVal);
     // TODO: bind it with the Instruction pointed by prevPc.
     bindLocal(newState->prevPC, *newState, retVal);
   }
 
   // for globals
-  for (const auto x : nps.getGlobalsMod()) {
+  for (const auto &x : nps.globalsWrite) {
     const GlobalValue *gv = x.first;
     MemoryObject *mo = globalObjects.at(gv);
     const ObjectState *os = newState->addressSpace.findObject(mo);
@@ -4946,14 +4943,17 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
                                              const ErrorPathSummary &nps) {
   // construct a state
   ExecutionState *newState = new ExecutionState(es);
-  for (auto pre : nps.getPreCond()) {
+  for (auto pre : nps.preCond) {
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (!success)
       return;
   }
   addedStates.push_back(newState);
+
+  // FIXME: should process globals that has been modified?
+
   terminateStateOnError(*newState, "apply error path summary",
-                        (enum TerminateReason)nps.getTerminateReason());
+                        (enum TerminateReason)nps.tr);
 }
 
 ///

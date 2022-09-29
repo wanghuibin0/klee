@@ -92,7 +92,6 @@ void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       std::string name = std::string("global_") + v.getName().data();
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
-      globalsMod.push_back(&v);
       const ObjectState *os = state->addressSpace.findObject(mo);
       Expr::Width width = getWidthForLLVMType(v.getType()->getElementType());
       summary->addFormalGlobals(&v, os->read(0, width));
@@ -167,6 +166,43 @@ void BUCSExecutor::terminateStateEarly(ExecutionState &state,
   terminateState(state);
 }
 
+void BUCSExecutor::terminateStateOnReturn(ExecutionState &state) {
+  // this state has been terminated normally because of encountering a ret
+  // instruction, we should record its behaviour as summary.
+
+  // we use prevPC because pc has been updated in stepInstruction
+  KInstruction *ki = state.prevPC;
+  Instruction *i = ki->inst;
+  // llvm::outs() << "Instruction is : " << *i << "\n";
+  if (!isa<ReturnInst>(i)) {
+    // must be a call to `exit`
+    // construct an error summary
+    ErrorPathSummary eps(state.constraints, Exit);
+    summary->addErrorPathSummary(eps);
+    terminateState(state);
+    return;
+  }
+  ReturnInst *ri = cast<ReturnInst>(i);
+  bool isVoidReturn = (ri->getNumOperands() == 0);
+
+  // construct a path summary
+  NormalPathSummary ps;
+  ps.setPreCond(state.constraints);
+  ps.markVoidRet(isVoidReturn);
+
+  ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
+  if (!isVoidReturn) {
+    result = eval(ki, 0, state).value;
+    ps.setRetValue(result);
+  }
+
+  ps.globalsWrite = state.globalsWrite;
+
+  summary->addNormalPathSummary(ps);
+
+  terminateState(state);
+}
+
 void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
   // this state has been terminated normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
@@ -197,20 +233,7 @@ void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
     ps.setRetValue(result);
   }
 
-  // TODO: globals should be collected beforehand
-  for (const GlobalValue *g : globalsMod) {
-    llvm::Type *ty = g->getType();
-    assert(isa<llvm::PointerType>(ty) &&
-           "found a global that is not pointer type");
-    llvm::Type *eleTy = cast<llvm::PointerType>(ty)->getElementType();
-
-    Expr::Width w = getWidthForLLVMType(eleTy);
-
-    MemoryObject *mo = globalObjects[g];
-    const ObjectState *os = state.addressSpace.findObject(mo);
-    ref<Expr> gVal = os->read(0, w);
-    ps.addGlobalsModified(g, gVal);
-  }
+  ps.globalsWrite = state.globalsWrite;
 
   summary->addNormalPathSummary(ps);
 
@@ -316,7 +339,7 @@ void BUCSExecutor::executeMemoryOperation(
           wos->write(offset, value);
 
           if (globalObjectsReversed.count(mo)) {
-            objectsWritten.push_back(globalObjectsReversed.at(mo));
+            state.globalsWrite.emplace(globalObjectsReversed.at(mo), value);
           }
         }
       } else {
@@ -328,7 +351,7 @@ void BUCSExecutor::executeMemoryOperation(
         bindLocal(target, state, result);
 
         if (globalObjectsReversed.count(mo)) {
-          objectsRead.push_back(globalObjectsReversed.at(mo));
+          state.globalsRead.emplace(globalObjectsReversed.at(mo));
         }
       }
 
@@ -364,14 +387,14 @@ void BUCSExecutor::executeMemoryOperation(
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           wos->write(mo->getOffsetExpr(address), value);
           if (globalObjectsReversed.count(mo)) {
-            objectsWritten.push_back(globalObjectsReversed.at(mo));
+            state.globalsWrite.emplace(globalObjectsReversed.at(mo), value);
           }
         }
       } else {
         ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
         bindLocal(target, *bound, result);
         if (globalObjectsReversed.count(mo)) {
-          objectsRead.push_back(globalObjectsReversed.at(mo));
+          state.globalsRead.emplace(globalObjectsReversed.at(mo));
         }
       }
     }

@@ -26,6 +26,7 @@ private:
                                    const llvm::Twine &message) override;
   // call exit handler and terminate state
   void terminateStateOnExit(ExecutionState &state) override;
+  void terminateStateOnReturn(ExecutionState &state);
   // call error handler and terminate state
   void terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &message,
@@ -38,7 +39,6 @@ private:
 private:
   llvm::Function *func;
   std::unique_ptr<Summary> summary;
-  std::vector<const llvm::GlobalValue*> globalsMod;
   ConstraintSet context;
 };
 
@@ -62,6 +62,7 @@ private:
                                    const llvm::Twine &message) override;
   // call exit handler and terminate state
   void terminateStateOnExit(ExecutionState &state) override;
+  void terminateStateOnReturn(ExecutionState &state);
   // call error handler and terminate state
   void terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &message,
@@ -78,10 +79,7 @@ private:
 private:
   llvm::Function *func;
   std::unique_ptr<Summary> summary;
-  std::vector<const llvm::GlobalValue*> globalsMod;
   ConstraintSet context;
-  std::vector<const llvm::GlobalValue *> objectsWritten;
-  std::vector<const llvm::GlobalValue *> objectsRead;
 };
 } // namespace klee
 #endif

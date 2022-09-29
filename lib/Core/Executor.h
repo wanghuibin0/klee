@@ -15,6 +15,7 @@
 #ifndef KLEE_EXECUTOR_H
 #define KLEE_EXECUTOR_H
 
+//#include "CSExecutor.h"
 #include "ExecutionState.h"
 #include "UserSearcher.h"
 
@@ -586,16 +587,16 @@ public:
                                      const ErrorPathSummary &eps);
 };
 
-
-//#include "klee/Expr/Constraints.h"
-//#include "llvm/IR/Function.h"
-//#include "llvm/IR/GlobalValue.h"
-
 class NormalPathSummary {
+  friend class Executor;
+  friend class BUCSExecutor;
+  friend class CTXCSExecutor;
+  
   ConstraintSet preCond;
   bool isVoidRet;
   ref<Expr> retVal;
-  std::map<const llvm::GlobalValue *, ref<Expr>> globalsMod;
+  std::set<const llvm::GlobalValue *> globalsRead;
+  std::map<const llvm::GlobalValue *, ref<Expr>> globalsWrite;
 
 public:
   NormalPathSummary() = default;
@@ -604,16 +605,6 @@ public:
   void setRetValue(ref<Expr> ret) {
     assert(isVoidRet == false);
     retVal = ret;
-  }
-  void addGlobalsModified(const llvm::GlobalValue *gv, ref<Expr> val) {
-    globalsMod.insert(std::make_pair(gv, val));
-  }
-
-  ConstraintSet getPreCond() const { return preCond; }
-  bool getIsVoidRet() const { return isVoidRet; }
-  ref<Expr> getRetVal() const { return retVal; }
-  std::map<const llvm::GlobalValue *, ref<Expr>> getGlobalsMod() const {
-    return globalsMod;
   }
 
   void dump() const {
@@ -628,7 +619,7 @@ public:
       retVal->dump();
     }
     llvm::errs() << "globals modified:\n";
-    for (auto x : globalsMod) {
+    for (const auto &x : globalsWrite) {
       llvm::errs() << x.first->getName() << ": ";
       x.second->dump();
     }
@@ -636,15 +627,19 @@ public:
 };
 
 class ErrorPathSummary {
+  friend class Executor;
+  friend class BUCSExecutor;
+  friend class CTXCSExecutor;
+
   ConstraintSet preCond;
   enum Executor::TerminateReason tr;
-  std::map<const llvm::GlobalValue *, ref<Expr>> globalsMod;
+  std::set<const llvm::GlobalVariable *> globalsRead;
+  std::map<const llvm::GlobalVariable *, ref<Expr>> globalsWrite;
 
 public:
   ErrorPathSummary(ConstraintSet &preCond, enum Executor::TerminateReason tr)
       : preCond(preCond), tr(tr) {}
-  ConstraintSet getPreCond() const { return preCond; }
-  enum Executor::TerminateReason getTerminateReason() const { return tr; }
+
   void dump() {
     llvm::errs() << "this is an error path summary\n";
     llvm::errs() << "pre conditions are:\n";
@@ -653,7 +648,7 @@ public:
     }
     llvm::errs() << "terminate reason is: " << tr << "\n";
     llvm::errs() << "globals modified:\n";
-    for (auto x : globalsMod) {
+    for (const auto &x : globalsWrite) {
       llvm::errs() << x.first->getName() << ": ";
       x.second->dump();
     }
@@ -707,7 +702,7 @@ public:
     globals.insert(std::make_pair(gv, e));
   }
 
-  void dump() {
+  void dump() const {
     llvm::errs() << "function name: " << function->getName() << "\n";
     llvm::errs() << "context is: ";
     context->dump();

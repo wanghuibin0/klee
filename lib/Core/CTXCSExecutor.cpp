@@ -125,7 +125,6 @@ void CTXCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
       std::string name = std::string("global_") + v.getName().data();
       executeMakeSymbolic(*state, mo, name);
       mo->setName(name);
-      globalsMod.push_back(&v);
       const ObjectState *os = state->addressSpace.findObject(mo);
       Expr::Width width = getWidthForLLVMType(v.getType()->getElementType());
       summary->addFormalGlobals(&v, os->read(0, width));
@@ -198,6 +197,33 @@ void CTXCSExecutor::terminateStateEarly(ExecutionState &state,
   terminateState(state);
 }
 
+void CTXCSExecutor::terminateStateOnReturn(ExecutionState &state) {
+  // this state has been terminate normally because of encountering a ret
+  // instruction, we should record its behaviour as summary.
+
+  // we use prevPC because pc has been updated in stepInstruction
+  KInstruction *ki = state.prevPC;
+  Instruction *i = ki->inst;
+  ReturnInst *ri = cast<ReturnInst>(i);
+  bool isVoidReturn = (ri->getNumOperands() == 0);
+
+  // construct a path summary
+  NormalPathSummary ps;
+  ps.setPreCond(state.constraints);
+  ps.markVoidRet(isVoidReturn);
+
+  ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
+  if (!isVoidReturn) {
+    result = eval(ki, 0, state).value;
+    ps.setRetValue(result);
+  }
+
+  ps.globalsWrite = state.globalsWrite;
+
+  summary->addNormalPathSummary(ps);
+
+  terminateState(state);
+}
 void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
   // this state has been terminate normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
@@ -219,20 +245,7 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
     ps.setRetValue(result);
   }
 
-  // TODO: globals should be collected beforehand
-  for (const GlobalValue *g : globalsMod) {
-    llvm::Type *ty = g->getType();
-    assert(isa<llvm::PointerType>(ty) &&
-           "found a global that is not pointer type");
-    llvm::Type *eleTy = cast<llvm::PointerType>(ty)->getElementType();
-
-    Expr::Width w = getWidthForLLVMType(eleTy);
-
-    MemoryObject *mo = globalObjects[g];
-    const ObjectState *os = state.addressSpace.findObject(mo);
-    ref<Expr> gVal = os->read(0, w);
-    ps.addGlobalsModified(g, gVal);
-  }
+  ps.globalsWrite = state.globalsWrite;
 
   summary->addNormalPathSummary(ps);
 
