@@ -185,6 +185,9 @@ class ObjectState {
 private:
   friend class AddressSpace;
   friend class ref<ObjectState>;
+  friend class Executor;
+  friend class BUCSExecutor;
+  friend class CTXCSExecutor;
 
   unsigned copyOnWriteOwner; // exclusively for AddressSpace
 
@@ -268,6 +271,7 @@ private:
   void fastRangeCheckOffset(ref<Expr> offset, unsigned *base_r,
                             unsigned *size_r) const;
   void flushRangeForRead(unsigned rangeBase, unsigned rangeSize) const;
+  void flushForRead(void) const;
   void flushRangeForWrite(unsigned rangeBase, unsigned rangeSize);
 
   bool isByteConcrete(unsigned offset) const;

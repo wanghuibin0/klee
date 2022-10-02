@@ -183,7 +183,7 @@ protected:
   std::map<const llvm::GlobalValue *, MemoryObject *> globalObjects;
 
   /// Reversion of Map of globals to their representative memory object.
-  std::map<const MemoryObject *, const llvm::GlobalValue *> globalObjectsReversed;
+  std::map<const MemoryObject *, const llvm::Value *> mo2Val;
 
   /// Map of globals to their bound address. This also includes
   /// globals that have no representative object (i.e. functions).
@@ -455,6 +455,7 @@ protected:
                                      enum TerminateReason termReason,
                                      const char *suffix = NULL,
                                      const llvm::Twine &longMessage = "");
+  virtual void terminateStateOnRet(ExecutionState &state);
 
   // call error handler and terminate state, for execution errors
   // (things that should not be possible, like illegal instruction or
@@ -573,6 +574,7 @@ public:
   MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
   void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
 
+private:
   // check whether the context of summary is compatible with the state.
   bool checkCompatible(ExecutionState &es, Summary &sum);
   // apply summary to a state, may generate new states, delete states, set
@@ -580,12 +582,29 @@ public:
   void applySummaryToAState(ExecutionState &es, std::vector<ref<Expr>> &args,
                             Summary &sum);
   ExecutionState *
-  applyNormalPathSummaryToAState(ExecutionState &es,
+  applyNormalPathSummaryToAState(ExecutionState *newState,
+                                 std::vector<ref<Expr>> &args,
                                  ExprReplaceVisitor2 &replaceMap,
                                  const NormalPathSummary &nps);
-  void applyErrorPathSummaryToAState(ExecutionState &es,
+  void applyErrorPathSummaryToAState(ExecutionState *newState,
+                                     std::vector<ref<Expr>> &args,
                                      ExprReplaceVisitor2 &replaceMap,
                                      const ErrorPathSummary &eps);
+
+  // update state os according to the update history indicated by un, 
+  // with the help of ExprReplaceVisitor2 erv, 
+  // which will replace the Exprs in callee with the ones in caller.
+  // Used when applying a summary.
+  void updateObjectState(ObjectState *os, ref<UpdateNode> un,
+                         ExprReplaceVisitor2 &erv);
+
+  // used to find the MemoryObject in the caller corresponding to the arguments in a call instruction.
+  const MemoryObject *findObjectByAddr(ExecutionState *es, ref<Expr> addr);
+
+protected:
+  // record the update history of globals and pointer args in a normal path summary, used for eliminating repeated code.
+  template <typename PathSummary>
+  void summarizeGlobalsAndPtrArgs(ExecutionState &state, PathSummary &ps);
 };
 
 class NormalPathSummary {
@@ -596,8 +615,8 @@ class NormalPathSummary {
   ConstraintSet preCond;
   bool isVoidRet;
   ref<Expr> retVal;
-  std::set<const llvm::GlobalValue *> globalsRead;
-  std::map<const llvm::GlobalValue *, ref<Expr>> globalsWrite;
+  std::map<const llvm::GlobalValue *, UpdateList> globalsUpdated;
+  std::map<const llvm::Argument*, UpdateList> argsUpdated;
 
 public:
   NormalPathSummary() = default;
@@ -620,9 +639,9 @@ public:
       retVal->dump();
     }
     llvm::errs() << "globals modified:\n";
-    for (const auto &x : globalsWrite) {
+    for (const auto &x : globalsUpdated) {
       llvm::errs() << x.first->getName() << ": ";
-      x.second->dump();
+      x.second.dump();
     }
   }
 };
@@ -634,8 +653,8 @@ class ErrorPathSummary {
 
   ConstraintSet preCond;
   enum Executor::TerminateReason tr;
-  std::set<const llvm::GlobalVariable *> globalsRead;
-  std::map<const llvm::GlobalVariable *, ref<Expr>> globalsWrite;
+    std::map<const llvm::GlobalValue *, UpdateList> globalsUpdated;
+  std::map<const llvm::Argument*, UpdateList> argsUpdated;
 
 public:
   ErrorPathSummary(ConstraintSet &preCond, enum Executor::TerminateReason tr)
@@ -649,14 +668,18 @@ public:
     }
     llvm::errs() << "terminate reason is: " << tr << "\n";
     llvm::errs() << "globals modified:\n";
-    for (const auto &x : globalsWrite) {
+    for (const auto &x : globalsUpdated) {
       llvm::errs() << x.first->getName() << ": ";
-      x.second->dump();
+      x.second.dump();
     }
   }
 };
 
 class Summary {
+  friend class Executor;
+  friend class BUCSExecutor;
+  friend class CTXCSExecutor;
+
   llvm::Function *function;
   ref<Expr> context;
   std::vector<ref<Expr>> args;
@@ -682,23 +705,10 @@ public:
     context = OrExpr::create(context, aContext);
   }
   void addArg(llvm::Value *farg, ref<Expr> arg) { args.push_back(arg); }
-
-  llvm::Function *getFunction() const { return function; }
-  ref<Expr> getContext() const { return context; }
-  std::vector<ref<Expr>> getFormalArgs() const { return args; }
-  std::vector<NormalPathSummary> getNormalPathSummaries() const {
-    return normalPathSummaries;
-  }
-  const std::vector<ErrorPathSummary> &getErrorPathSummaries() const {
-    return errorPathSummaries;
-  }
   unsigned getNumOfSummaries() const {
     return normalPathSummaries.size() + errorPathSummaries.size();
   }
-  const std::map<const llvm::GlobalValue *, ref<Expr>> &
-  getFormalGlobals() const {
-    return globals;
-  }
+
   void addFormalGlobals(const llvm::GlobalValue *gv, ref<Expr> e) {
     globals.insert(std::make_pair(gv, e));
   }
@@ -712,7 +722,7 @@ public:
       a->dump();
       llvm::errs() << "; ";
     }
-    llvm::errs() << "globals: \n";
+    llvm::errs() << "globals symbolified: \n";
     for (auto g : globals) {
       llvm::errs() << "key: " << g.first->getName() << "\n";
       llvm::errs() << "val: ";
@@ -721,7 +731,7 @@ public:
     }
 
     llvm::errs() << "there are " << normalPathSummaries.size() + errorPathSummaries.size() << " paths:\n";
-    llvm::errs() << normalPathSummaries.size() << " normal and " << errorPathSummaries.size() << "error path\n";
+    llvm::errs() << normalPathSummaries.size() << " normal and " << errorPathSummaries.size() << " error path\n";
 
     for (auto nps : normalPathSummaries) {
       nps.dump();

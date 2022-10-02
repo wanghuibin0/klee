@@ -29,6 +29,7 @@ BUCSExecutor::BUCSExecutor(const Executor &proto, llvm::Function *f)
     }
 
 void BUCSExecutor::run() {
+  llvm::errs() << "BUCSExecutor::run: starting to run BUCSExecutor for function " << func->getName() << "\n";
   ExecutionState *es = createInitialState(func);
 
   bindModuleConstants();
@@ -56,9 +57,12 @@ void BUCSExecutor::run() {
   delete searcher;
   searcher = nullptr;
 
+  llvm::errs() << "BUCSExecutor::run: finished running BUCSExecutor for function " << func->getName() << "\n";
+  llvm::errs() << "======================================================================================\n";
   llvm::errs() << "finished generating summary for function " << func->getName() << "\n\tdumping it:\n";
   summary->dump();
   llvm::errs() << "summary has been dumped!\n";
+  llvm::errs() << "======================================================================================\n";
 
   return;
 }
@@ -80,12 +84,13 @@ void BUCSExecutor::initializeGlobals(ExecutionState &state) {
 }
 
 void BUCSExecutor::makeGlobalsSymbolic(ExecutionState *state) {
+  llvm::errs() << "BUCSExecutor::makeGlobalsSymbolic\n";
   const Module *m = kmodule->module.get();
 
   for (const GlobalVariable &v : m->globals()) {
     MemoryObject *mo = globalObjects.find(&v)->second;
 
-    llvm::errs() << "makeGlobalsSymbolic: " << mo->name << " at address " << mo->address << "\n";
+    //llvm::errs() << "makeGlobalsSymbolic: " << mo->name << " at address " << mo->address << "\n";
 
     if (v.isConstant()) {
       assert(v.hasInitializer());
@@ -130,6 +135,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
       if (!mo) {
         llvm::report_fatal_error("out of memory");
       }
+      mo2Val.emplace(mo, arg);
       bindObjectInState(*state, mo, false);
       std::string name = "arg_" + func->getName().str() + "_" + llvm::utostr(i);
       executeMakeSymbolic(*state, mo, name);
@@ -147,7 +153,7 @@ void BUCSExecutor::makeArgsSymbolic(ExecutionState *state) {
 }
 
 void BUCSExecutor::terminateState(ExecutionState &state) {
-  interpreterHandler->incPathsExplored();
+  //interpreterHandler->incPathsExplored();
 
   std::vector<ExecutionState *>::iterator it =
       std::find(addedStates.begin(), addedStates.end(), &state);
@@ -164,12 +170,12 @@ void BUCSExecutor::terminateState(ExecutionState &state) {
 
 void BUCSExecutor::terminateStateEarly(ExecutionState &state,
                                        const Twine &message) {
-  // this state has been terminated early, it has no contricution to the summary
+  // this state has been terminated early, it has no contribution to the summary
   // lib, just throw it.
   terminateState(state);
 }
 
-void BUCSExecutor::terminateStateOnReturn(ExecutionState &state) {
+void BUCSExecutor::terminateStateOnRet(ExecutionState &state) {
   // this state has been terminated normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
 
@@ -177,14 +183,8 @@ void BUCSExecutor::terminateStateOnReturn(ExecutionState &state) {
   KInstruction *ki = state.prevPC;
   Instruction *i = ki->inst;
   // llvm::outs() << "Instruction is : " << *i << "\n";
-  if (!isa<ReturnInst>(i)) {
-    // must be a call to `exit`
-    // construct an error summary
-    ErrorPathSummary eps(state.constraints, Exit);
-    summary->addErrorPathSummary(eps);
-    terminateState(state);
-    return;
-  }
+  assert(isa<ReturnInst>(i) && "must be reaching a ret inst");
+
   ReturnInst *ri = cast<ReturnInst>(i);
   bool isVoidReturn = (ri->getNumOperands() == 0);
 
@@ -199,7 +199,7 @@ void BUCSExecutor::terminateStateOnReturn(ExecutionState &state) {
     ps.setRetValue(result);
   }
 
-  ps.globalsWrite = state.globalsWrite;
+  summarizeGlobalsAndPtrArgs(state, ps);
 
   summary->addNormalPathSummary(ps);
 
@@ -207,40 +207,23 @@ void BUCSExecutor::terminateStateOnReturn(ExecutionState &state) {
 }
 
 void BUCSExecutor::terminateStateOnExit(ExecutionState &state) {
-  // this state has been terminated normally because of encountering a ret
-  // instruction, we should record its behaviour as summary.
+  // this state has been terminated normally because of encountering a exit
+  // instruction, we should record its behaviour as an error summary.
 
   // we use prevPC because pc has been updated in stepInstruction
   KInstruction *ki = state.prevPC;
   Instruction *i = ki->inst;
   // llvm::outs() << "Instruction is : " << *i << "\n";
-  if (!isa<ReturnInst>(i)) {
-    // must be a call to `exit`
-    // construct an error summary
-    ErrorPathSummary eps(state.constraints, Exit);
-    summary->addErrorPathSummary(eps);
-    terminateState(state);
-    return;
-  }
-  ReturnInst *ri = cast<ReturnInst>(i);
-  bool isVoidReturn = (ri->getNumOperands() == 0);
+  assert(!isa<ReturnInst>(i) && "must not be a return inst");
+  // must be a call to `exit`
+  // construct an error summary
+  ErrorPathSummary ps(state.constraints, Exit);
 
-  // construct a path summary
-  NormalPathSummary ps;
-  ps.setPreCond(state.constraints);
-  ps.markVoidRet(isVoidReturn);
-
-  ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
-  if (!isVoidReturn) {
-    result = eval(ki, 0, state).value;
-    ps.setRetValue(result);
-  }
-
-  ps.globalsWrite = state.globalsWrite;
-
-  summary->addNormalPathSummary(ps);
-
+  summarizeGlobalsAndPtrArgs(state, ps);
+  
+  summary->addErrorPathSummary(ps);
   terminateState(state);
+  return;
 }
 
 void BUCSExecutor::terminateStateOnError(ExecutionState &state,
@@ -252,12 +235,26 @@ void BUCSExecutor::terminateStateOnError(ExecutionState &state,
                                   << "terminate this state because error: "
                                   << TerminateReasonNames[termReason] << "\n";);
   // construct an error path summary
-  ErrorPathSummary eps(state.constraints, termReason);
+  ErrorPathSummary ps(state.constraints, termReason);
 
-  // since the error path will be terminated immediately, we do not handle
-  // globals for simplicity.
+  for (const auto &mo : state.modified) {
+    const ObjectState *os = state.addressSpace.findObject(mo);
+    os->flushForRead();
+    UpdateList ul = os->getUpdates();
 
-  summary->addErrorPathSummary(eps);
+    // skip what is not global or pointer arguments
+    if (!mo2Val.count(mo)) continue;
+    const Value *v = mo2Val[mo];
+    assert((isa<GlobalValue>(v) || isa<Argument>(v)) &&
+           "must be a globalValue or argument");
+    if (isa<GlobalValue>(v)) {
+      ps.globalsUpdated.emplace(cast<GlobalValue>(v), ul);
+    } else {
+      ps.argsUpdated.emplace(cast<Argument>(v), ul);
+    }
+  }
+
+  summary->addErrorPathSummary(ps);
 
   terminateState(state);
 
@@ -340,10 +337,7 @@ void BUCSExecutor::executeMemoryOperation(
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
-
-          if (globalObjectsReversed.count(mo)) {
-            state.globalsWrite.emplace(globalObjectsReversed.at(mo), value);
-          }
+          state.modified.insert(mo);
         }
       } else {
         ref<Expr> result = os->read(offset, type);
@@ -352,10 +346,6 @@ void BUCSExecutor::executeMemoryOperation(
           result = replaceReadWithSymbolic(state, result);
 
         bindLocal(target, state, result);
-
-        if (globalObjectsReversed.count(mo)) {
-          state.globalsRead.emplace(globalObjectsReversed.at(mo));
-        }
       }
 
       return;
@@ -389,16 +379,11 @@ void BUCSExecutor::executeMemoryOperation(
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           wos->write(mo->getOffsetExpr(address), value);
-          if (globalObjectsReversed.count(mo)) {
-            state.globalsWrite.emplace(globalObjectsReversed.at(mo), value);
-          }
+          state.modified.insert(mo);
         }
       } else {
         ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
         bindLocal(target, *bound, result);
-        if (globalObjectsReversed.count(mo)) {
-          state.globalsRead.emplace(globalObjectsReversed.at(mo));
-        }
       }
     }
 

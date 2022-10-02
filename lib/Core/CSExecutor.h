@@ -26,7 +26,7 @@ private:
                                    const llvm::Twine &message) override;
   // call exit handler and terminate state
   void terminateStateOnExit(ExecutionState &state) override;
-  void terminateStateOnReturn(ExecutionState &state);
+  void terminateStateOnRet(ExecutionState &state);
   // call error handler and terminate state
   void terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &message,
@@ -62,7 +62,7 @@ private:
                                    const llvm::Twine &message) override;
   // call exit handler and terminate state
   void terminateStateOnExit(ExecutionState &state) override;
-  void terminateStateOnReturn(ExecutionState &state);
+  void terminateStateOnRet(ExecutionState &state);
   // call error handler and terminate state
   void terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &message,

@@ -478,6 +478,16 @@ public:
   ~UpdateNode() = default;
 
   unsigned computeHash();
+
+  void dump() const {
+    if (next) {
+      next->dump();
+    }
+    llvm::errs() << "index: ";
+    index->dump();
+    llvm::errs() << "value: ";
+    value->dump();
+  }
 };
 
 class Array {
@@ -529,6 +539,13 @@ public:
   Expr::Width getDomain() const { return domain; }
   Expr::Width getRange() const { return range; }
 
+  void dump() const {
+    llvm::errs() << "Array name: " << name << "\n";
+    llvm::errs() << "size: " << size << "\n";
+    llvm::errs() << "domain: " << domain << "\n";
+    llvm::errs() << "range: " << range << "\n";
+  }
+
   /// ComputeHash must take into account the name, the size, the domain, and the range
   unsigned computeHash();
   unsigned hash() const { return hashValue; }
@@ -559,6 +576,8 @@ public:
 
   int compare(const UpdateList &b) const;
   unsigned hash() const;
+
+  void dump() const;
 };
 
 /// Class representing a one byte read from an array. 

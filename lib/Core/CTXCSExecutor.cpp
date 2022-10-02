@@ -199,13 +199,15 @@ void CTXCSExecutor::terminateStateEarly(ExecutionState &state,
   terminateState(state);
 }
 
-void CTXCSExecutor::terminateStateOnReturn(ExecutionState &state) {
+void CTXCSExecutor::terminateStateOnRet(ExecutionState &state) {
   // this state has been terminate normally because of encountering a ret
   // instruction, we should record its behaviour as summary.
 
   // we use prevPC because pc has been updated in stepInstruction
   KInstruction *ki = state.prevPC;
   Instruction *i = ki->inst;
+
+  assert(isa<ReturnInst>(i) && "must be reaching a ret inst");
   ReturnInst *ri = cast<ReturnInst>(i);
   bool isVoidReturn = (ri->getNumOperands() == 0);
 
@@ -220,7 +222,21 @@ void CTXCSExecutor::terminateStateOnReturn(ExecutionState &state) {
     ps.setRetValue(result);
   }
 
-  ps.globalsWrite = state.globalsWrite;
+  for (const auto &mo : state.modified) {
+    const ObjectState *os = state.addressSpace.findObject(mo);
+    os->flushForRead();
+    UpdateList ul = os->getUpdates();
+
+    // skip what is not global or pointer arguments
+    if (!mo2Val.count(mo)) continue;
+    const Value *v = mo2Val[mo];
+    assert((isa<GlobalValue>(v) || isa<Argument>(v)) && "must be a globalValue or argument");
+    if (isa<GlobalValue>(v)) {
+      ps.globalsUpdated.emplace(cast<GlobalValue>(v), ul);
+    } else {
+      ps.argsUpdated.emplace(cast<Argument>(v), ul);
+    }
+  }
 
   summary->addNormalPathSummary(ps);
 
@@ -233,23 +249,13 @@ void CTXCSExecutor::terminateStateOnExit(ExecutionState &state) {
   // we use prevPC because pc has been updated in stepInstruction
   KInstruction *ki = state.prevPC;
   Instruction *i = ki->inst;
-  ReturnInst *ri = cast<ReturnInst>(i);
-  bool isVoidReturn = (ri->getNumOperands() == 0);
 
-  // construct a path summary
-  NormalPathSummary ps;
-  ps.setPreCond(state.constraints);
-  ps.markVoidRet(isVoidReturn);
+  assert(!isa<ReturnInst>(i) && "must not be a return inst");
 
-  ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
-  if (!isVoidReturn) {
-    result = eval(ki, 0, state).value;
-    ps.setRetValue(result);
-  }
+  ErrorPathSummary ps(state.constraints, Exit);
 
-  ps.globalsWrite = state.globalsWrite;
-
-  summary->addNormalPathSummary(ps);
+  summarizeGlobalsAndPtrArgs(state, ps);
+  summary->addErrorPathSummary(ps);
 
   terminateState(state);
 }
@@ -265,12 +271,11 @@ void CTXCSExecutor::terminateStateOnError(ExecutionState &state,
   KLEE_DEBUG_WITH_TYPE("cse", llvm::errs() << "terminate this state message: "
                                            << messaget << "\n";);
   // construct an error path summary
-  ErrorPathSummary eps(state.constraints, termReason);
+  ErrorPathSummary ps(state.constraints, termReason);
 
-  // since the error path will be terminated immediately, we do not handle
-  // globals for simplicity.
+  summarizeGlobalsAndPtrArgs(state, ps);
 
-  summary->addErrorPathSummary(eps);
+  summary->addErrorPathSummary(ps);
 
   terminateState(state);
 }
@@ -294,3 +299,4 @@ void CTXCSExecutor::stepInstruction(ExecutionState &state) {
   ++state.pc;
 }
 
+// TODO: implement executeMemoryOperation

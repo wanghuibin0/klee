@@ -54,7 +54,6 @@ void UpdateList::extend(const ref<Expr> &index, const ref<Expr> &value) {
     assert(root->getDomain() == index->getWidth());
     assert(root->getRange() == value->getWidth());
   }
-
   head = new UpdateNode(head, index, value);
 }
 
@@ -91,4 +90,15 @@ unsigned UpdateList::hash() const {
   if (head)
     res ^= head->hash();
   return res;
+}
+
+void UpdateList::dump() const {
+  llvm::errs() << "UpdateList::dump()\n";
+  llvm::errs() << "the root array\n";
+  if (root) root->dump();
+  else llvm::errs() << "null root array\n";
+  
+  llvm::errs() << "update history\n";
+  if (head) head->dump();
+  else llvm::errs() << "no update node\n";
 }

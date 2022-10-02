@@ -188,9 +188,8 @@ public:
   /// @brief Constraints collected so far
   ConstraintSet constraints;
 
-  /// @brief Global variables read and written by this state
-  std::set<const llvm::GlobalValue *> globalsRead;
-  std::map<const llvm::GlobalValue *, ref<Expr>> globalsWrite;
+  /// @brief Global variables updated by this state
+  std::set<const MemoryObject*> modified;
 
   /// Statistics and information
 

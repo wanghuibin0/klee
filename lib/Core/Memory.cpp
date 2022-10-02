@@ -278,6 +278,8 @@ void ObjectState::flushRangeForRead(unsigned rangeBase,
   } 
 }
 
+void ObjectState::flushForRead(void) const { flushRangeForRead(0, size); }
+
 void ObjectState::flushRangeForWrite(unsigned rangeBase, 
                                      unsigned rangeSize) {
   if (!flushMask) flushMask = new BitArray(size, true);

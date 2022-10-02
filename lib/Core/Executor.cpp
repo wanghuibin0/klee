@@ -55,7 +55,7 @@
 
 #include "klee/Support/Debug.h"
 
-#include "ConcreteSummaryManager.h"
+#include "klee/Core/SummaryManager.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
@@ -769,7 +769,7 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
     if (!mo)
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
-    globalObjectsReversed.emplace(mo, &v);
+    mo2Val.emplace(mo, &v);
     globalAddresses.emplace(&v, mo->getBaseExpr());
     mo->setName(v.getName());
   }
@@ -1688,14 +1688,14 @@ bool Executor::executeCallCompositionally(ExecutionState &state,
                                           KInstruction *ki, Function *f,
                                           std::vector<ref<Expr>> &arguments) {
   SummaryManager *sm = summaryManager;
-  Summary *summary = sm->getSummary(state, f);
-  if (summary && checkCompatible(state, *summary)) {
+  Summary *summary = sm->getSummary(f);
+  if (!summary || !checkCompatible(state, *summary)) {
     // should prepare actual arguments before application.
-    applySummary(state, arguments, summary);
-    return true;
-  } else {
-    return false;
+    summary = sm->computeSummary(state, f);
   }
+  assert(summary && "summary must have been generated");
+  applySummary(state, arguments, summary);
+  return true;
 }
 
 void Executor::applySummary(ExecutionState &state,
@@ -1827,14 +1827,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       }
     }
   } else {
-    /* static bool isCSEBegin = false; */
-    /* if (f->getName() == "__klee_posix_wrapped_main") { */
-    /*   isCSEBegin = true; */
-    /* } */
-
     /* llvm::errs() << "executing funciton calls: " << f->getName() << "\n"; */
-    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f) /*&&
-        isCSEBegin*/) {
+    if (InterpreterToUse != NOCSE && kmodule->isSuitableForCSE(f)) {
       bool success = executeCallCompositionally(state, ki, f, arguments);
       if (success)
         return;
@@ -2076,7 +2070,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     if (state.stack.size() <= 1) {
       assert(!caller && "caller set on initial stack frame");
-      terminateStateOnExit(state);
+      terminateStateOnRet(state);
     } else {
       state.popFrame();
 
@@ -3688,12 +3682,6 @@ void Executor::terminateState(ExecutionState &state) {
       processTree->remove(state.ptreeNode);
     delete &state;
   }
-  // for BUCSE testing, dump path condition and address space of this path.
-  // llvm::errs() << "At the end of this path, dumping....................\n";
-  // llvm::errs() << "path condition....................\n";
-  // state.constraints.dump();
-  // llvm::errs() << "address space....................\n";
-  // state.addressSpace.dump();
 }
 
 void Executor::terminateStateEarly(ExecutionState &state,
@@ -3711,6 +3699,11 @@ void Executor::terminateStateOnExit(ExecutionState &state) {
     interpreterHandler->processTestCase(state, 0, 0);
   terminateState(state);
 }
+
+void Executor::terminateStateOnRet(ExecutionState &state) {
+  terminateStateOnExit(state);
+}
+
 
 const InstructionInfo &
 Executor::getLastNonKleeInternalInstruction(const ExecutionState &state,
@@ -4797,7 +4790,7 @@ void Executor::dumpStates() {
 
 // check whether the context of summary is compatible with the state.
 bool Executor::checkCompatible(ExecutionState &es, Summary &sum) {
-  ref<Expr> context = sum.getContext();
+  ref<Expr> context = sum.context;
   // fast path
   if (context->isTrue()) {
     return true;
@@ -4832,18 +4825,18 @@ void Executor::applySummaryToAState(ExecutionState &es,
                                     Summary &sum) {
   // construct the substitution map: formalArg -> actualArg
   // do it here because it is convenient to access formalArg from sum.
-  const auto &formalArgs = sum.getFormalArgs();
+  const auto &formalArgs = sum.args;
   const auto &actualArgs = args;
   std::map<ref<Expr>, ref<Expr>> replaceMap;
 
-  // we assume that there is no var args.
-  assert(formalArgs.size() == actualArgs.size());
+  assert(formalArgs.size() == actualArgs.size() &&
+         "we assume that there is no var args");
   for (unsigned i = 0; i < actualArgs.size(); ++i) {
     replaceMap.insert(std::make_pair(formalArgs[i], actualArgs[i]));
   }
 
   // update: globals should be put into the map, too.
-  const auto &formalGlobals = sum.getFormalGlobals();
+  const auto &formalGlobals = sum.globals;
   // now we know all GlobalValue* from formalGlobals,
   // we should use them to find the current value of these globals in current
   // state.
@@ -4864,52 +4857,62 @@ void Executor::applySummaryToAState(ExecutionState &es,
   ExprReplaceVisitor2 erv(replaceMap);
 
   const std::vector<NormalPathSummary> &normalPathSummaries =
-      sum.getNormalPathSummaries();
+      sum.normalPathSummaries;
   const std::vector<ErrorPathSummary> &errorPathSummaries =
-      sum.getErrorPathSummaries();
+      sum.errorPathSummaries;
 
-  for (auto nps : normalPathSummaries) {
-    ExecutionState *newState = applyNormalPathSummaryToAState(es, erv, nps);
-    if (newState)
-      addedStates.push_back(newState);
+  // back up the address of original ExecutionState
+  ExecutionState *orig = &es;
+
+  // clone from the orig for all paths
+  std::vector<ExecutionState*> appliedStates;
+  appliedStates.push_back(orig);
+  for (unsigned i = 1; i < normalPathSummaries.size() + errorPathSummaries.size(); ++i) {
+    ExecutionState *forked = new ExecutionState(*orig);
+    appliedStates.push_back(forked);
+    addedStates.push_back(forked); // addedStates and removedStates will be updated in terminateState later
   }
 
-  KLEE_DEBUG_WITH_TYPE("cse", llvm::errs()
-                                  << "applying a error summary, it belongs to "
-                                  << sum.getFunction()->getName() << "\n";);
-  for (auto eps : errorPathSummaries) {
-    // record the pre condition and termination reason, but do not generate new
-    // states.
-    applyErrorPathSummaryToAState(es, erv, eps);
+  // apply one path summary to one state each time
+  for (unsigned i = 0; i < normalPathSummaries.size(); ++i) {
+    ExecutionState *resultState = applyNormalPathSummaryToAState(appliedStates[i], args, erv, normalPathSummaries[i]);
+    appliedStates[i] = resultState;
   }
-  // delete the original state
-  // removedStates.push_back(&es);
-  // reuse the original state
-  if (addedStates.empty()) {
-    removedStates.push_back(&es);
-  } else {
-    ExecutionState *toReplaceState = addedStates.back();
-    swap(es, *toReplaceState);
-    delete toReplaceState;
-    addedStates.pop_back();
+
+  for (unsigned i = normalPathSummaries.size(), j = 0; i < appliedStates.size(); ++i, ++j) {
+    applyErrorPathSummaryToAState(appliedStates[i], args, erv, errorPathSummaries[j]);
   }
+}
+
+void Executor::updateObjectState(ObjectState *os, ref<UpdateNode> un, ExprReplaceVisitor2 &erv) {
+  if (!un) return;
+  updateObjectState(os, un->next, erv);
+  os->write(erv.visit(un->index), erv.visit(un->value));
+}
+
+const MemoryObject *Executor::findObjectByAddr(ExecutionState *state, ref<Expr> address) {
+  address = optimizer.optimizeExpr(address, true);
+
+  ObjectPair op;
+  bool success;
+  solver->setTimeout(coreSolverTimeout);
+  state->addressSpace.resolveOne(*state, solver.get(), address, op, success);
+  solver->setTimeout(time::Span());
+  return op.first;
 }
 
 // apply a path summary to current state and generate a new state.
 ExecutionState *
-Executor::applyNormalPathSummaryToAState(ExecutionState &es,
+Executor::applyNormalPathSummaryToAState(ExecutionState *newState,
+                                         std::vector<ref<Expr>> &args,
                                          ExprReplaceVisitor2 &replaceMap,
                                          const NormalPathSummary &nps) {
-
-  // construct a new state
-  ExecutionState *newState = new ExecutionState(es);
-
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
-  for (auto pre : nps.preCond) {
+  for (auto &&pre : nps.preCond) {
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (success == false) {
-      delete newState;
+      terminateState(*newState);
       return nullptr;
     }
   }
@@ -4922,15 +4925,29 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
   }
 
   // for globals
-  for (const auto &x : nps.globalsWrite) {
+  for (const auto &x : nps.globalsUpdated) {
     const GlobalValue *gv = x.first;
     MemoryObject *mo = globalObjects.at(gv);
     const ObjectState *os = newState->addressSpace.findObject(mo);
     ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
 
-    ref<Expr> updatedG = replaceMap.visit(x.second);
+    UpdateList ul = x.second;
+    updateObjectState(wos, ul.head, replaceMap);
+  }
 
-    wos->write(0, updatedG);
+  // for pointer args
+  for (const auto &x : nps.argsUpdated) {
+    const Argument *arg = x.first;
+    // get the memory object representing the actual argument
+    unsigned argno = arg->getArgNo();
+    ref<Expr> address = args[argno];
+    
+    const MemoryObject *mo = findObjectByAddr(newState, address);
+    const ObjectState *os = newState->addressSpace.findObject(mo);
+    ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
+
+    UpdateList ul = x.second;
+    updateObjectState(wos, ul.head, replaceMap);
   }
 
   return newState;
@@ -4938,23 +4955,68 @@ Executor::applyNormalPathSummaryToAState(ExecutionState &es,
 
 // apply an error path summary to current state and generate a new error path
 // summary for this function.
-void Executor::applyErrorPathSummaryToAState(ExecutionState &es,
+void Executor::applyErrorPathSummaryToAState(ExecutionState *newState,
+                                             std::vector<ref<Expr>> &args,
                                              ExprReplaceVisitor2 &replaceMap,
-                                             const ErrorPathSummary &nps) {
-  // construct a state
-  ExecutionState *newState = new ExecutionState(es);
-  for (auto pre : nps.preCond) {
+                                             const ErrorPathSummary &eps) {
+  for (auto pre : eps.preCond) {
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
-    if (!success)
+    if (!success) {
+      terminateState(*newState);
       return;
+    }
   }
-  addedStates.push_back(newState);
 
-  // FIXME: should process globals that has been modified?
+    // for globals
+  for (const auto &x : eps.globalsUpdated) {
+    const GlobalValue *gv = x.first;
+    MemoryObject *mo = globalObjects.at(gv);
+    const ObjectState *os = newState->addressSpace.findObject(mo);
+    ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
 
-  terminateStateOnError(*newState, "apply error path summary",
-                        (enum TerminateReason)nps.tr);
+    UpdateList ul = x.second;
+    updateObjectState(wos, ul.head, replaceMap);
+  }
+
+  // for pointer args
+  for (const auto &x : eps.argsUpdated) {
+    const Argument *arg = x.first;
+    // get the memory object representing the actual argument
+    unsigned argno = arg->getArgNo();
+    ref<Expr> address = args[argno];
+    
+    const MemoryObject *mo = findObjectByAddr(newState, address);
+    const ObjectState *os = newState->addressSpace.findObject(mo);
+    ObjectState *wos = newState->addressSpace.getWriteable(mo, os);
+
+    UpdateList ul = x.second;
+    updateObjectState(wos, ul.head, replaceMap);
+  }
+
+  terminateStateOnError(*newState, "apply error path summary", eps.tr);
 }
+
+template <typename PathSummary>
+void Executor::summarizeGlobalsAndPtrArgs(ExecutionState &state, PathSummary &ps) {
+  for (const auto &mo : state.modified) {
+    const ObjectState *os = state.addressSpace.findObject(mo);
+    os->flushForRead();
+    UpdateList ul = os->getUpdates();
+    
+    // skip what is not global or pointer arguments
+    if (!mo2Val.count(mo)) continue;
+    const Value *v = mo2Val[mo];
+    assert((isa<GlobalValue>(v) || isa<Argument>(v)) && "must be a globalValue or argument");
+    if (isa<GlobalValue>(v)) {
+      ps.globalsUpdated.emplace(cast<GlobalValue>(v), ul);
+    } else {
+      ps.argsUpdated.emplace(cast<Argument>(v), ul);
+    }
+  }
+}
+
+template void Executor::summarizeGlobalsAndPtrArgs(ExecutionState &state, NormalPathSummary &ps);
+template void Executor::summarizeGlobalsAndPtrArgs(ExecutionState &state, ErrorPathSummary &ps);
 
 ///
 
