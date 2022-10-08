@@ -4482,6 +4482,7 @@ void Executor::runFunctionAsMain(Function *f, int argc, char **argv,
   globalObjects.clear();
   globalAddresses.clear();
 
+  llvm::errs() << "symbolic execution is over\n";
   sm->dump();
   delete sm;
 
@@ -4959,6 +4960,8 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState *newState,
                                              std::vector<ref<Expr>> &args,
                                              ExprReplaceVisitor2 &replaceMap,
                                              const ErrorPathSummary &eps) {
+  llvm::errs() << "Executor::applyErrorPathSummaryToAState\n";
+  eps.dump();
   for (auto pre : eps.preCond) {
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (!success) {

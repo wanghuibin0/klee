@@ -413,6 +413,7 @@ static const char *dontCseFuncList[] = {
   "setlocale",
   "__uClibc_init",
   "__uClibc_fini",
+  "__uClibc_main",
   "_locale_init",
   "_stdio_init",
   "isatty",

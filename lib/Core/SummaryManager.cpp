@@ -54,7 +54,7 @@ Summary *SummaryManager::getSummary(llvm::Function *f) {
 void SummaryManager::setProto(Executor &e) { proto.reset(new Executor(e)); }
 
 void SummaryManager::dump() {
-  llvm::errs() << "in SummaryManager::dump()";
+  llvm::errs() << "in SummaryManager::dump()\n";
   for (const auto &x : summaryLib) {
     llvm::errs() << "summary for function: " << x.first->getName() << "\n";
     x.second->dump();

@@ -660,7 +660,7 @@ public:
   ErrorPathSummary(ConstraintSet &preCond, enum Executor::TerminateReason tr)
       : preCond(preCond), tr(tr) {}
 
-  void dump() {
+  void dump() const {
     llvm::errs() << "this is an error path summary\n";
     llvm::errs() << "pre conditions are:\n";
     for (auto x : preCond) {
