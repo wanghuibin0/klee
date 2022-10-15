@@ -643,6 +643,11 @@ public:
       llvm::errs() << x.first->getName() << ": ";
       x.second.dump();
     }
+    llvm::errs() << "args modified:\n";
+    for (const auto &x : argsUpdated) {
+      llvm::errs() << x.first->getName() << ": ";
+      x.second.dump();
+    }
   }
 };
 
@@ -669,6 +674,11 @@ public:
     llvm::errs() << "terminate reason is: " << tr << "\n";
     llvm::errs() << "globals modified:\n";
     for (const auto &x : globalsUpdated) {
+      llvm::errs() << x.first->getName() << ": ";
+      x.second.dump();
+    }
+    llvm::errs() << "args modified:\n";
+    for (const auto &x : argsUpdated) {
       llvm::errs() << x.first->getName() << ": ";
       x.second.dump();
     }

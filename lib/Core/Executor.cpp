@@ -4877,6 +4877,9 @@ void Executor::applySummaryToAState(ExecutionState &es,
   // apply one path summary to one state each time
   for (unsigned i = 0; i < normalPathSummaries.size(); ++i) {
     ExecutionState *resultState = applyNormalPathSummaryToAState(appliedStates[i], args, erv, normalPathSummaries[i]);
+    llvm::errs() << "+++++++++++++++++\nExecutor::applySummaryToAState, after applyNormalPathSummaryToAState\ndumping constraints\n";
+    if (resultState)
+      resultState->constraints.dump();
     appliedStates[i] = resultState;
   }
 
@@ -4911,6 +4914,9 @@ Executor::applyNormalPathSummaryToAState(ExecutionState *newState,
   // for precondition, replace formal args with actual args
   // then push them into path constrait.
   for (auto &&pre : nps.preCond) {
+    pre->dump();
+    replaceMap.dump();
+    ref<Expr> cond = replaceMap.visit(pre);
     bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
     if (success == false) {
       terminateState(*newState);
@@ -4963,7 +4969,10 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState *newState,
   llvm::errs() << "Executor::applyErrorPathSummaryToAState\n";
   eps.dump();
   for (auto pre : eps.preCond) {
-    bool success = addConstraintMayFail(*newState, replaceMap.visit(pre));
+    pre->dump();
+    replaceMap.dump();
+    ref<Expr> cond = replaceMap.visit(pre);
+    bool success = addConstraintMayFail(*newState, cond);
     if (!success) {
       terminateState(*newState);
       return;
@@ -5002,20 +5011,25 @@ void Executor::applyErrorPathSummaryToAState(ExecutionState *newState,
 template <typename PathSummary>
 void Executor::summarizeGlobalsAndPtrArgs(ExecutionState &state, PathSummary &ps) {
   for (const auto &mo : state.modified) {
-    const ObjectState *os = state.addressSpace.findObject(mo);
-    os->flushForRead();
-    UpdateList ul = os->getUpdates();
-    
-    // skip what is not global or pointer arguments
     if (!mo2Val.count(mo)) continue;
     const Value *v = mo2Val[mo];
     assert((isa<GlobalValue>(v) || isa<Argument>(v)) && "must be a globalValue or argument");
+
+    const ObjectState *os = state.addressSpace.findObject(mo);
+    os->flushForRead();
+    UpdateList ul = os->getUpdates();
+
+    llvm::errs() << "Executor::summarizeGlobalsAndPtrArgs\n" << v->getName() << "\n";
+    ul.dump();
+
+    // skip what is not global or pointer arguments
     if (isa<GlobalValue>(v)) {
       ps.globalsUpdated.emplace(cast<GlobalValue>(v), ul);
     } else {
       ps.argsUpdated.emplace(cast<Argument>(v), ul);
     }
   }
+  llvm::errs() << "-----------------------------------------------\n";
 }
 
 template void Executor::summarizeGlobalsAndPtrArgs(ExecutionState &state, NormalPathSummary &ps);

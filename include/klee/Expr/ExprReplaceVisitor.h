@@ -43,6 +43,15 @@ public:
     }
     return Action::doChildren();
   }
+
+  void dump() const {
+    for (const auto &x : replacements) {
+      llvm::errs() << "first = ";
+      x.first->dump();
+      llvm::errs() << "second = ";
+      x.second->dump();
+    }
+  }
 };
 
 } // end namespace klee

@@ -99,6 +99,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     depth(state.depth),
     addressSpace(state.addressSpace),
     constraints(state.constraints),
+    modified(state.modified),
     pathOS(state.pathOS),
     symPathOS(state.symPathOS),
     coveredLines(state.coveredLines),
