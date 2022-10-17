@@ -187,6 +187,7 @@ private:
   friend class ref<ObjectState>;
   friend class Executor;
   friend class BUCSExecutor;
+  friend class TDCSExecutor;
   friend class CTXCSExecutor;
 
   unsigned copyOnWriteOwner; // exclusively for AddressSpace

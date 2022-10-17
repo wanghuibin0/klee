@@ -26,7 +26,7 @@ cl::opt<InterpreterType> InterpreterToUse(
         clEnumValN(NOCSE, "none",
                    "do not compositional, only normal symbolic executor")
             KLEE_LLVM_CL_VAL_END),
-    cl::init(BUCSE), cl::cat(CompExCat));
+    cl::init(TDCSE), cl::cat(CompExCat));
 } // namespace klee
 
 SummaryManager *SummaryManager::createSummaryManager() {
@@ -34,6 +34,8 @@ SummaryManager *SummaryManager::createSummaryManager() {
     /* llvm::errs() << "creating ctxcse summary manager.\n"; */
     klee_message("creating ctxcse summary manager.\n");
     return new CTXCSESummaryManager();
+  } else if (InterpreterToUse == TDCSE) {
+    return new TDCSESummaryManager();
   } else if (InterpreterToUse == BUCSE) {
     /* llvm::errs() << "creating bucse summary manager.\n"; */
     klee_message("creating bucse summary manager.\n");
@@ -64,6 +66,17 @@ void SummaryManager::dump() {
 Summary *CTXCSESummaryManager::computeSummary(ExecutionState &es,
                                               llvm::Function *f) {
   CTXCSExecutor *executor = new CTXCSExecutor(*proto, f);
+  executor->run();
+  std::unique_ptr<Summary> sum = executor->extractSummary();
+  Summary *ret = sum.get();
+  summaryLib[f] = std::move(sum);
+  delete executor;
+  return ret;
+}
+
+Summary *TDCSESummaryManager::computeSummary(ExecutionState &es,
+                                             llvm::Function *f) {
+  TDCSExecutor *executor = new TDCSExecutor(*proto, f);
   executor->run();
   std::unique_ptr<Summary> sum = executor->extractSummary();
   Summary *ret = sum.get();

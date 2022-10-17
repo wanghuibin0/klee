@@ -44,6 +44,14 @@ public:
   Summary *computeSummary(ExecutionState &es, llvm::Function *f) override;
 };
 
+class TDCSESummaryManager : public SummaryManager {
+public:
+  // ctors
+  TDCSESummaryManager() = default;
+
+  Summary *computeSummary(ExecutionState &es, llvm::Function *f) override;
+};
+
 class BUCSESummaryManager : public SummaryManager {
 public:
   // ctors

@@ -654,6 +654,7 @@ public:
 class ErrorPathSummary {
   friend class Executor;
   friend class BUCSExecutor;
+  friend class TDCSExecutor;
   friend class CTXCSExecutor;
 
   ConstraintSet preCond;

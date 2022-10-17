@@ -10,6 +10,7 @@ klee_add_component(kleeCore
   SummaryManager.cpp
   CSExecutor.cpp
   BUCSExecutor.cpp
+  TDCSExecutor.cpp
   CTXCSExecutor.cpp
   ProtoExecutor.cpp
   CallCSEProxy.cpp
