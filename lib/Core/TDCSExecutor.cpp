@@ -25,7 +25,7 @@ namespace klee {
 
 TDCSExecutor::TDCSExecutor(const Executor &proto, llvm::Function *f)
     : Executor(proto), func(f), summary(new Summary(f)) {
-      errs() << "TDCSE for function " << f->getName() << "\n";
+      errs() << "creating TDCSE for function " << f->getName() << "\n";
     }
 
 void TDCSExecutor::run() {

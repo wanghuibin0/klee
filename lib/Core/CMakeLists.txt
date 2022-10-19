@@ -12,7 +12,6 @@ klee_add_component(kleeCore
   BUCSExecutor.cpp
   TDCSExecutor.cpp
   CTXCSExecutor.cpp
-  ProtoExecutor.cpp
   CallCSEProxy.cpp
   AddressSpace.cpp
   MergeHandler.cpp

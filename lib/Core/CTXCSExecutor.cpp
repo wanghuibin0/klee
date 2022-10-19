@@ -22,7 +22,9 @@ namespace klee {
 }
 
 CTXCSExecutor::CTXCSExecutor(const Executor &proto, llvm::Function *f)
-    : Executor(proto), func(f), summary(new Summary(f)) {}
+    : Executor(proto), func(f), summary(new Summary(f)) {
+      errs() << "creating CTXCSE for function " << f->getName() << "\n";
+    }
 
 void CTXCSExecutor::run() {
   ExecutionState *es = createInitialState(func);
